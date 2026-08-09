@@ -1,8 +1,8 @@
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { Bell, Sun, Moon, ChevronDown } from 'lucide-react';
+import { Bell, Sun, Moon, ChevronDown, Menu } from 'lucide-react';
 
-export default function Topbar({ title, darkMode, onToggleDark }) {
+export default function Topbar({ title, darkMode, onToggleDark, onToggleSidebar }) {
   const { user } = useAuth();
   const navigate = useNavigate();
 
@@ -15,8 +15,16 @@ export default function Topbar({ title, darkMode, onToggleDark }) {
 
   return (
     <header className="topbar">
-      {/* Left: Page Title */}
-      <div>
+      {/* Left: Hamburger menu + Title */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <button
+          className="topbar-hamburger-btn"
+          onClick={onToggleSidebar}
+          title="Toggle Navigation Menu"
+          aria-label="Open menu"
+        >
+          <Menu size={20} />
+        </button>
         <h1 className="topbar-title">{title}</h1>
       </div>
 

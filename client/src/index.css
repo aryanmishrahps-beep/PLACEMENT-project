@@ -1594,8 +1594,31 @@ img { max-width: 100%; }
 .animate-delay-3   { animation-delay: 0.3s; }
 
 /* ============================================
-   RESPONSIVE
+   RESPONSIVE & MOBILE DRAWER
    ============================================ */
+.topbar-hamburger-btn {
+  display: none;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+}
+
+.sidebar-mobile-close {
+  display: none;
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.sidebar-overlay {
+  display: none;
+}
+
 @media (max-width: 1024px) {
   .grid-4 { grid-template-columns: repeat(2, 1fr); }
   .grid-3 { grid-template-columns: repeat(2, 1fr); }
@@ -1604,15 +1627,59 @@ img { max-width: 100%; }
 }
 
 @media (max-width: 768px) {
-  .sidebar { transform: translateX(-100%); }
-  .sidebar.open { transform: translateX(0); }
+  .topbar-hamburger-btn { display: flex; align-items: center; justify-content: center; }
+  .sidebar-mobile-close { display: flex; align-items: center; justify-content: center; }
+
+  .sidebar {
+    transform: translateX(-100%);
+    box-shadow: var(--shadow-xl);
+    z-index: 1000;
+  }
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  .sidebar-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(3px);
+    z-index: 999;
+    animation: fadeIn 0.2s ease;
+  }
+
   .main-content { margin-left: 0; }
   .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
   .col-span-2 { grid-column: span 1; }
-  .page-container { padding: 16px; }
+  .page-container { padding: 16px 14px; }
+  .topbar { padding: 0 16px; }
+
   .auth-left { display: none; }
-  .auth-right { width: 100%; }
-  .assessment-body { padding: 16px; }
+  .auth-right { width: 100%; padding: 24px 16px; }
+  .auth-form-container { max-width: 100%; }
+
+  .assessment-body { padding: 14px; gap: 14px; }
+  .assessment-header { padding: 0 14px; }
+  .assessment-footer { padding: 0 14px; }
+
+  .camera-widget {
+    bottom: 60px;
+    right: 12px;
+    width: 160px !important;
+  }
+
+  .topbar-user-name { display: none; }
+}
+
+@media (max-width: 480px) {
+  .page-title { font-size: 1.35rem; }
+  .card { padding: 16px; }
+  .quiz-card { padding: 14px; flex-direction: column; align-items: flex-start; }
+  .quiz-card .btn { width: 100%; margin-top: 6px; }
+  .stat-card { padding: 14px; }
+  .stat-value { font-size: 1.5rem; }
+  .data-table th, .data-table td { padding: 8px 10px; font-size: 0.8rem; }
 }
 
 /* ============================================
@@ -1634,3 +1701,4 @@ select option { background: var(--bg-card) !important; color: var(--text-primary
   overflow: hidden;
   background: #0d1117;
 }
+

@@ -2,8 +2,8 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import {
   LayoutDashboard, Radio, PlayCircle, FileText, BookOpen, ClipboardList,
-  Code2, Trophy, Award, Users, BookMarked, PlusSquare, BarChart3, Video,
-  ShieldCheck, UserCog, Settings, ChevronRight, LogOut, Shield
+  Code2, Trophy, Award, Users, BookMarked, PlusSquare, BarChart3,
+  UserCog, Settings, ChevronRight, LogOut, Shield, X
 } from 'lucide-react';
 
 const studentNav = [
@@ -43,7 +43,7 @@ const roleLabels = {
   admin: 'Admin Control'
 };
 
-export default function Sidebar() {
+export default function Sidebar({ isOpen, onClose }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -56,21 +56,39 @@ export default function Sidebar() {
     .slice(0, 2)
     .toUpperCase() || 'U';
 
+  const handleNavClick = (path) => {
+    navigate(path);
+    if (onClose) onClose();
+  };
+
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar ${isOpen ? 'open' : ''}`}>
       {/* Logo */}
       <div
         className="sidebar-logo"
-        onClick={() => navigate('/')}
-        style={{ cursor: 'pointer' }}
+        onClick={() => handleNavClick('/')}
+        style={{ cursor: 'pointer', justifyContent: 'space-between' }}
       >
-        <div className="sidebar-logo-icon">
-          <Shield size={18} color="white" strokeWidth={2.5} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div className="sidebar-logo-icon">
+            <Shield size={18} color="white" strokeWidth={2.5} />
+          </div>
+          <div>
+            <div className="sidebar-logo-text">AssessHub</div>
+            <div className="sidebar-logo-sub">Assessment Platform</div>
+          </div>
         </div>
-        <div>
-          <div className="sidebar-logo-text">AssessHub</div>
-          <div className="sidebar-logo-sub">Professional Assessment Platform</div>
-        </div>
+
+        {/* Mobile close button */}
+        {onClose && (
+          <button
+            className="sidebar-mobile-close"
+            onClick={(e) => { e.stopPropagation(); onClose(); }}
+            aria-label="Close sidebar"
+          >
+            <X size={18} />
+          </button>
+        )}
       </div>
 
       {/* Role Indicator */}
@@ -99,7 +117,7 @@ export default function Sidebar() {
             <div
               key={item.path}
               className={`nav-item ${isActive ? 'active' : ''}`}
-              onClick={() => navigate(item.path)}
+              onClick={() => handleNavClick(item.path)}
             >
               <span className="nav-icon">
                 <Icon size={16} strokeWidth={isActive ? 2.5 : 2} />
@@ -117,7 +135,7 @@ export default function Sidebar() {
       <div className="sidebar-footer">
         <div
           className="sidebar-user"
-          onClick={() => navigate(`/${user?.role}/dashboard`)}
+          onClick={() => handleNavClick(`/${user?.role}/dashboard`)}
         >
           <div className="user-avatar">{initials}</div>
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -145,14 +163,6 @@ export default function Sidebar() {
             fontWeight: 600,
             cursor: 'pointer',
             transition: 'all 0.15s ease',
-          }}
-          onMouseEnter={e => {
-            e.currentTarget.style.background = 'rgba(220,38,38,0.18)';
-            e.currentTarget.style.borderColor = 'rgba(220,38,38,0.4)';
-          }}
-          onMouseLeave={e => {
-            e.currentTarget.style.background = 'rgba(220,38,38,0.1)';
-            e.currentTarget.style.borderColor = 'rgba(220,38,38,0.2)';
           }}
         >
           <LogOut size={14} />

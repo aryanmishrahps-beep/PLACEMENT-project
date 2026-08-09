@@ -10,6 +10,7 @@ export default function ProtectedLayout({ children, title, allowedRoles }) {
   const [darkMode, setDarkMode] = useState(() => {
     return localStorage.getItem('ah_theme') === 'dark';
   });
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : 'light');
@@ -36,12 +37,6 @@ export default function ProtectedLayout({ children, title, allowedRoles }) {
           <p style={{ color: 'var(--text-primary)', fontWeight: 700, fontSize: '1rem' }}>AssessHub</p>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Loading your workspace…</p>
         </div>
-        {/* Skeleton preview */}
-        <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
-          {[60, 80, 50].map((w, i) => (
-            <div key={i} className="skeleton skeleton-text" style={{ width: w, height: 10 }} />
-          ))}
-        </div>
       </div>
     );
   }
@@ -53,9 +48,23 @@ export default function ProtectedLayout({ children, title, allowedRoles }) {
 
   return (
     <div className="app-layout">
-      <Sidebar />
+      {/* Sidebar Mobile Overlay */}
+      {sidebarOpen && (
+        <div
+          className="sidebar-overlay"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+
       <div className="main-content">
-        <Topbar title={title} darkMode={darkMode} onToggleDark={() => setDarkMode(d => !d)} />
+        <Topbar
+          title={title}
+          darkMode={darkMode}
+          onToggleDark={() => setDarkMode(d => !d)}
+          onToggleSidebar={() => setSidebarOpen(s => !s)}
+        />
         <div className="page-container animate-fadeIn">
           {children}
         </div>
