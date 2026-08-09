@@ -1,49 +1,47 @@
 import { useEffect, useRef, useState } from 'react';
-import { Camera, Minimize2, Maximize2, AlertTriangle, Shield, Activity } from 'lucide-react';
-import { FaceTracker, CONFIG } from '../../utils/faceTracker';
+import { Camera, Minimize2, Maximize2, AlertTriangle, Shield, Activity, RefreshCw } from 'lucide-react';
+import { HeadPositionTracker, DEFAULT_CONFIG } from '../../utils/faceTracker';
 import FaceMovementGraph from './FaceMovementGraph';
 import { assessmentService } from '../../services/assessmentService';
 
 /**
- * AI Webcam Proctoring Component with Smooth Real-Time Face Movement Detection
+ * AI Webcam Proctoring Component — Head-Position-Only Detector
+ * Technical Specification Compliant (Calibration, Hysteresis, Debounced State Machine, Discrete Events).
  */
 export default function WebcamProctoring({
   isActive,
   sessionId,
   onViolationDetected,
-  currentViolations = 0,
   maxViolations = 3,
-  showGraphInWidget = true
+  configOverrides = {}
 }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
 
-  const trackerRef = useRef(new FaceTracker());
+  const trackerRef = useRef(new HeadPositionTracker(configOverrides));
   const [streamActive, setStreamActive] = useState(false);
   const [permissionError, setPermissionError] = useState(null);
   const [minimized, setMinimized] = useState(false);
   const [showGraph, setShowGraph] = useState(false);
 
-  // Real-time states
+  // Real-time telemetry state
   const [telemetry, setTelemetry] = useState({
-    magnitudePct: 0,
-    severity: 'NORMAL',
-    direction: 'CENTER',
-    normX: 0.5,
-    normY: 0.5,
-    yaw: 0,
-    pitch: 0,
-    roll: 0,
+    state: 'CALIBRATING',
+    calibrationProgress: 0,
     isFacePresent: true,
+    rawX: 0.5,
+    smoothedX: 0.5,
+    centerX: 0.5,
+    boundaries: { leftTrigger: 0.45, rightTrigger: 0.55 },
+    eventCount: 0,
+    isWarningActive: false,
+    warningDirection: null,
   });
 
   const [history, setHistory] = useState([]);
-  const [instantWarning, setInstantWarning] = useState(null);
-
   const isAnalyzing = useRef(false);
-  const consecutiveViolations = useRef(0);
 
-  // 1. Initialize camera
+  // 1. Initialize webcam feed
   useEffect(() => {
     let mediaStream = null;
     async function startCamera() {
@@ -62,15 +60,18 @@ export default function WebcamProctoring({
         }
       } catch (err) {
         setPermissionError('Camera access required.');
-        triggerViolation('WEBCAM_DISABLED', 'HIGH', 'Camera feed was disabled or blocked.');
+        if (onViolationDetected) {
+          onViolationDetected({ type: 'WEBCAM_DISABLED', severity: 'HIGH', message: 'Camera feed disabled or blocked.' });
+        }
       }
     }
     if (isActive) startCamera();
     return () => { if (mediaStream) mediaStream.getTracks().forEach(t => t.stop()); };
   }, [isActive]);
 
-  const triggerViolation = (type, severity, message) => {
-    if (onViolationDetected) onViolationDetected({ type, severity, message });
+  // Recalibrate trigger
+  const handleRecalibrate = () => {
+    trackerRef.current.reset();
   };
 
   // 2. Real-time Frame Analysis Loop (~100ms interval for smooth 10fps tracking)
@@ -91,97 +92,62 @@ export default function WebcamProctoring({
           canvas.height = 120;
           ctx.drawImage(video, 0, 0, 160, 120);
 
-          // Process frame with FaceTracker engine
+          // Process frame with HeadPositionTracker engine
           const result = trackerRef.current.processFrame(ctx, 160, 120);
 
           setTelemetry({
-            magnitudePct: result.magnitudePct,
-            severity: result.severity,
-            direction: result.direction,
-            normX: result.normX,
-            normY: result.normY,
-            yaw: result.yaw,
-            pitch: result.pitch,
-            roll: result.roll,
+            state: result.state,
+            calibrationProgress: result.calibrationProgress || 100,
             isFacePresent: result.isFacePresent,
+            rawX: result.rawX,
+            smoothedX: result.smoothedX,
+            centerX: result.centerX,
+            boundaries: result.boundaries,
+            eventCount: result.eventCount,
+            isWarningActive: result.isWarningActive,
+            warningDirection: result.warningDirection,
           });
 
           setHistory([...trackerRef.current.history]);
 
-          // Handle Instant UI Warning
-          if (result.shouldTriggerWarning) {
-            const warningMsg = result.direction !== 'CENTER'
-              ? `Face deviation (${result.direction}). Please look straight at screen.`
-              : `Excessive movement detected (${result.magnitudePct}%).`;
-
-            setInstantWarning(warningMsg);
-            setTimeout(() => setInstantWarning(null), 3000);
-
-            // Log Firebase Metadata Event asynchronously
-            if (sessionId) {
-              assessmentService.recordViolation({
-                sessionId,
-                type: 'FACE_MOVEMENT',
-                severity: result.magnitudePct > 70 ? 'HIGH' : 'MEDIUM',
-                message: warningMsg,
-                metadata: {
-                  direction: result.direction,
-                  magnitude: result.magnitudePct / 100,
-                  yaw: result.yaw,
-                  pitch: result.pitch,
-                  confidence: result.confidence,
-                }
-              });
-            }
+          // Handle Finalized Discrete Event Persistence to Firestore
+          if (result.newFinalizedEvent && sessionId) {
+            assessmentService.logProctoringEvent({
+              sessionId,
+              event: result.newFinalizedEvent
+            });
           }
 
-          // Strict violation check: Only trigger actual session warning if sustained (e.g. 4 consecutive checks)
-          if (result.magnitudePct > 65 || !result.isFacePresent) {
-            consecutiveViolations.current += 1;
-            if (consecutiveViolations.current >= 4) {
-              triggerViolation(
-                result.isFacePresent ? 'FACE_DEVIATION' : 'FACE_NOT_DETECTED',
-                'HIGH',
-                result.isFacePresent ? 'Sustained face deviation from screen.' : 'Face missing from camera view.'
-              );
-              consecutiveViolations.current = 0;
-            }
-          } else {
-            consecutiveViolations.current = 0;
+          // Optional: Notify parent if event count reaches excessive thresholds according to policy
+          if (result.newFinalizedEvent && onViolationDetected && result.eventCount >= 3) {
+            onViolationDetected({
+              type: 'SUSTAINED_FACE_DEVIATION',
+              severity: 'HIGH',
+              message: `Multiple head position deviations recorded (${result.eventCount} events).`
+            });
           }
         }
       } catch (_) {
       } finally {
         isAnalyzing.current = false;
       }
-    }, 120);
+    }, 100);
 
     return () => clearInterval(intervalId);
   }, [isActive, streamActive, sessionId]);
 
   if (!isActive) return null;
 
-  const isAlert = !!instantWarning || telemetry.magnitudePct > 45;
-  const reticleX = (telemetry.normX * 100).toFixed(1);
-  const reticleY = (telemetry.normY * 100).toFixed(1);
+  const isCalibrating = telemetry.state === 'CALIBRATING';
+  const isWarning = telemetry.isWarningActive;
+  const bounds = telemetry.boundaries;
+
+  // Calculate dynamic reticle X position relative to bounds
+  const relX = ((telemetry.smoothedX - 0.2) / 0.6) * 100;
+  const clampedX = Math.max(10, Math.min(90, relX));
 
   return (
     <>
-      {/* Instant Warning Banner Toast */}
-      {instantWarning && (
-        <div style={{
-          position: 'fixed', top: 72, left: '50%', transform: 'translateX(-50%)',
-          zIndex: 10000, background: '#ffffff', color: '#92400e',
-          border: '1.5px solid rgba(217,119,6,0.4)', borderRadius: 999,
-          padding: '10px 20px', boxShadow: '0 8px 24px rgba(217,119,6,0.25)',
-          display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.855rem', fontWeight: 700,
-          animation: 'toastIn 0.2s ease',
-        }}>
-          <AlertTriangle size={16} color="#d97706" />
-          <span>⚠ {instantWarning}</span>
-        </div>
-      )}
-
       {/* Main Camera Widget */}
       <div
         className={`camera-widget ${minimized ? 'minimized' : ''}`}
@@ -192,18 +158,27 @@ export default function WebcamProctoring({
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <div style={{
               width: 7, height: 7, borderRadius: '50%',
-              background: isAlert ? '#d97706' : '#22c55e',
+              background: isCalibrating ? '#f59e0b' : isWarning ? '#dc2626' : '#22c55e',
               animation: 'pulse 1.5s ease infinite',
             }} />
             <span style={{ fontSize: '0.65rem', fontWeight: 800, color: '#e2e8f0', letterSpacing: '0.05em' }}>
-              {isAlert ? 'MOVEMENT' : 'PROCTORING'}
+              {isCalibrating ? 'CALIBRATING' : isWarning ? 'WARNING' : 'PROCTORING'}
             </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {!isCalibrating && (
+              <button
+                onClick={handleRecalibrate}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', display: 'flex' }}
+                title="Recalibrate Head Center"
+              >
+                <RefreshCw size={11} />
+              </button>
+            )}
             <button
               onClick={() => setShowGraph(g => !g)}
               style={{ background: 'none', border: 'none', cursor: 'pointer', color: showGraph ? '#60a5fa' : '#64748b', display: 'flex' }}
-              title="Toggle Live Movement Graph"
+              title="Toggle Head Position Graph"
             >
               <Activity size={12} />
             </button>
@@ -220,7 +195,7 @@ export default function WebcamProctoring({
         {/* Video feed & Reticle Guide */}
         {!minimized && (
           <>
-            <div className={`camera-feed ${isAlert ? 'alert' : ''}`}>
+            <div className={`camera-feed ${isWarning ? 'alert' : ''}`}>
               {permissionError ? (
                 <div style={{
                   display: 'flex', flexDirection: 'column', alignItems: 'center',
@@ -240,60 +215,68 @@ export default function WebcamProctoring({
                     style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)' }}
                   />
 
-                  {/* Face Center Target Guide */}
-                  <div
-                    style={{
-                      position: 'absolute',
-                      top: `${reticleY}%`,
-                      left: `${reticleX}%`,
-                      transform: 'translate(-50%, -50%)',
-                      width: '45%',
-                      height: '60%',
-                      border: `1.5px ${isAlert ? 'solid #d97706' : 'dashed rgba(59,130,246,0.6)'}`,
-                      borderRadius: '50%',
-                      pointerEvents: 'none',
-                      transition: 'all 0.12s ease-out',
-                      boxShadow: isAlert ? '0 0 12px rgba(217,119,6,0.4)' : 'none',
-                    }}
-                  />
-                  {/* Ideal center crosshair */}
-                  <div style={{
-                    position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-                    width: 6, height: 6, borderRadius: '50%', background: 'rgba(255,255,255,0.4)', pointerEvents: 'none',
-                  }} />
+                  {/* Head Position Target Overlay */}
+                  {!isCalibrating && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: '50%',
+                        left: `${clampedX}%`,
+                        transform: 'translate(-50%, -50%)',
+                        width: '40%',
+                        height: '60%',
+                        border: `1.5px ${isWarning ? 'solid #dc2626' : 'dashed rgba(59,130,246,0.6)'}`,
+                        borderRadius: '50%',
+                        pointerEvents: 'none',
+                        transition: 'left 0.1s ease-out',
+                        boxShadow: isWarning ? '0 0 12px rgba(220,38,38,0.5)' : 'none',
+                      }}
+                    />
+                  )}
+
+                  {/* Calibrating overlay */}
+                  {isCalibrating && (
+                    <div style={{
+                      position: 'absolute', inset: 0, background: 'rgba(15,23,42,0.75)',
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                      gap: 6, padding: 10, textAlign: 'center',
+                    }}>
+                      <RefreshCw size={16} color="#f59e0b" style={{ animation: 'spin 1.2s linear infinite' }} />
+                      <span style={{ fontSize: '0.68rem', color: '#f8fafc', fontWeight: 700 }}>
+                        Sit normally, look at screen
+                      </span>
+                      <div style={{ width: '80%', height: 3, background: 'rgba(255,255,255,0.1)', borderRadius: 99, overflow: 'hidden' }}>
+                        <div style={{ height: '100%', background: '#f59e0b', width: `${telemetry.calibrationProgress}%`, transition: 'width 0.1s' }} />
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
               <canvas ref={canvasRef} style={{ display: 'none' }} />
             </div>
 
-            {/* Real-Time Live Status Bar */}
-            <div style={{ marginTop: 8 }}>
-              {/* Position indicator */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                <span style={{ fontSize: '0.65rem', color: '#94a3b8', fontWeight: 600 }}>Face Position</span>
-                <span style={{
-                  fontSize: '0.65rem', fontWeight: 700,
-                  color: telemetry.direction === 'CENTER' ? '#4ade80' : '#f59e0b',
-                }}>
-                  {telemetry.direction === 'CENTER' ? '● Centered' : `⚠ Move ${telemetry.direction}`}
-                </span>
-              </div>
-
-              {/* Movement magnitude bar */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <div style={{ flex: 1, height: 5, background: 'rgba(255,255,255,0.1)', borderRadius: 99, overflow: 'hidden' }}>
-                  <div style={{
-                    height: '100%', borderRadius: 99,
-                    width: `${telemetry.magnitudePct}%`,
-                    background: telemetry.magnitudePct > 70 ? '#ef4444' : telemetry.magnitudePct > 40 ? '#f59e0b' : '#3b82f6',
-                    transition: 'width 0.15s ease-out',
-                  }} />
+            {/* Live Warning Status Bar */}
+            {!isCalibrating && (
+              <div style={{ marginTop: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.68rem', color: '#94a3b8', fontWeight: 600 }}>Status</span>
+                  <span style={{
+                    fontSize: '0.68rem', fontWeight: 800,
+                    color: isWarning ? '#ef4444' : '#4ade80',
+                  }}>
+                    {isWarning
+                      ? `⚠ Face moved ${telemetry.warningDirection}`
+                      : '● Face centered'}
+                  </span>
                 </div>
-                <span style={{ fontSize: '0.65rem', fontWeight: 800, color: '#f1f5f9', minWidth: 28, textAlign: 'right' }}>
-                  {telemetry.magnitudePct}%
-                </span>
+
+                {isWarning && (
+                  <p style={{ fontSize: '0.6rem', color: '#fca5a5', marginTop: 3, fontWeight: 500 }}>
+                    Please return to calibrated safe zone.
+                  </p>
+                )}
               </div>
-            </div>
+            )}
           </>
         )}
       </div>
@@ -301,11 +284,17 @@ export default function WebcamProctoring({
       {/* Embedded / Expandable Live Graph */}
       {showGraph && (
         <div style={{
-          position: 'fixed', bottom: 20, right: 240, zIndex: 998, width: 440,
+          position: 'fixed', bottom: 20, right: 240, zIndex: 998, width: 460,
         }}>
-          <FaceMovementGraph history={history} threshold={45} />
+          <FaceMovementGraph
+            history={history}
+            boundaries={bounds}
+            eventCount={telemetry.eventCount}
+          />
         </div>
       )}
+
+      <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
     </>
   );
 }

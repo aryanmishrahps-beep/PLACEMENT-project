@@ -164,5 +164,26 @@ export const assessmentService = {
     } catch (e) {
       return () => {};
     }
+  },
+
+  // Log Finalized Discrete Proctoring Event to Firestore (Technical Spec Section 11)
+  async logProctoringEvent({ sessionId, event }) {
+    if (!sessionId || !event) return;
+    try {
+      if (db) {
+        const eventsCol = collection(db, 'assessmentSessions', sessionId, 'proctoringEvents');
+        await addDoc(eventsCol, {
+          eventType: event.eventType || 'FACE_MOVEMENT',
+          direction: event.direction,
+          timestamp: event.timestamp || new Date().toISOString(),
+          peakDeviation: event.peakDeviation || 0,
+          duration: event.duration || 0,
+          confidence: event.confidence || 0.95
+        });
+      }
+    } catch (err) {
+      console.warn('Firestore proctoring event log error:', err?.message);
+    }
   }
 };
+
