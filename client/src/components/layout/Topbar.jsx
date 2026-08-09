@@ -1,53 +1,58 @@
-import { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { Bell, Sun, Moon, ChevronDown } from 'lucide-react';
 
-export default function Topbar({ title }) {
+export default function Topbar({ title, darkMode, onToggleDark }) {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [searchVal, setSearchVal] = useState('');
+
+  const initials = user?.name
+    ?.split(' ')
+    .map(n => n[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase() || 'U';
 
   return (
     <header className="topbar">
+      {/* Left: Page Title */}
       <div>
-        <h2 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>{title}</h2>
+        <h1 className="topbar-title">{title}</h1>
       </div>
 
-      <div className="topbar-search">
-        <span style={{ color: 'var(--text-muted)' }}>🔍</span>
-        <input
-          type="text"
-          placeholder="Search courses, quizzes..."
-          value={searchVal}
-          onChange={(e) => setSearchVal(e.target.value)}
-        />
-      </div>
-
+      {/* Right: Actions */}
       <div className="topbar-actions">
-        {user?.role === 'student' && (
-          <>
-            <div className="streak-chip">
-              🔥 {user?.streak || 0} day streak
-            </div>
-            <div className="points-chip">
-              ⭐ {user?.skill_points || 0} pts
-            </div>
-          </>
-        )}
+        {/* Dark mode toggle */}
         <button
-          className="topbar-badge-btn"
-          onClick={() => navigate(`/${user?.role}/notifications`)}
-          title="Notifications"
+          className="topbar-icon-btn"
+          onClick={onToggleDark}
+          title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+          aria-label="Toggle dark mode"
         >
-          🔔
+          {darkMode ? <Sun size={16} /> : <Moon size={16} />}
+        </button>
+
+        {/* Notifications */}
+        <button
+          className="topbar-icon-btn"
+          title="Notifications"
+          aria-label="View notifications"
+        >
+          <Bell size={16} />
           <span className="badge-dot" />
         </button>
+
+        {/* User chip */}
         <div
-          className="user-avatar"
-          style={{ cursor: 'pointer', flexShrink: 0 }}
-          onClick={() => navigate(`/${user?.role}/profile`)}
+          className="topbar-user-chip"
+          onClick={() => navigate(`/${user?.role}/dashboard`)}
+          style={{ cursor: 'pointer' }}
         >
-          {user?.name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'U'}
+          <div className="topbar-avatar">{initials}</div>
+          <span className="topbar-user-name">
+            {user?.name?.split(' ')[0] || 'User'}
+          </span>
+          <ChevronDown size={13} style={{ color: 'var(--text-muted)' }} />
         </div>
       </div>
     </header>

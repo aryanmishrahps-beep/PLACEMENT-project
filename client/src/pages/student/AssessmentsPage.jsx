@@ -1,265 +1,226 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import ProtectedLayout from '../../components/layout/ProtectedLayout';
 import { SAMPLE_MCQ } from '../../data/seedData';
 import ProctoredMCQQuiz from '../../components/assessment/ProctoredMCQQuiz';
+import {
+  ClipboardList, Code2, Target, CheckCircle2, Clock, Users, BarChart3,
+  Flame, Trophy, Shield, Wifi, Camera, Monitor, ChevronRight, AlertTriangle, X
+} from 'lucide-react';
 
-const QUIZ_TIME = 10 * 60; // 10 minutes in seconds
-
-function QuizTimer({ seconds, onExpire }) {
-  const mins = String(Math.floor(seconds / 60)).padStart(2, '0');
-  const secs = String(seconds % 60).padStart(2, '0');
-  const isWarning = seconds < 120;
-  useEffect(() => { if (seconds === 0) onExpire(); }, [seconds]);
-  return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: '8px',
-      background: isWarning ? 'rgba(239,68,68,0.15)' : 'var(--bg-glass)',
-      border: `1px solid ${isWarning ? 'rgba(239,68,68,0.4)' : 'var(--border-default)'}`,
-      borderRadius: 'var(--radius-full)',
-      padding: '8px 16px',
-      fontFamily: "'JetBrains Mono', monospace",
-      fontWeight: 700,
-      fontSize: '1.1rem',
-      color: isWarning ? 'var(--color-danger)' : 'var(--text-primary)',
-      animation: isWarning ? 'pulse-glow 1s infinite' : 'none',
-    }}>
-      ⏱ {mins}:{secs}
-    </div>
-  );
-}
-
-function MCQQuiz({ quiz, onFinish }) {
-  const [currentQ, setCurrentQ] = useState(0);
-  const [answers, setAnswers] = useState({});
-  const [timeLeft, setTimeLeft] = useState(QUIZ_TIME);
-  const [submitted, setSubmitted] = useState(false);
-  const [result, setResult] = useState(null);
-  const timerRef = useRef(null);
+/* ── Assessment Start Screen ─────────────────────────────── */
+function AssessmentStartScreen({ assessment, onStart, onCancel }) {
+  const [checks, setChecks] = useState({
+    camera: null, browser: true, internet: null,
+  });
+  const [checksDone, setChecksDone] = useState(false);
 
   useEffect(() => {
-    timerRef.current = setInterval(() => {
-      setTimeLeft((t) => t > 0 ? t - 1 : 0);
-    }, 1000);
-    return () => clearInterval(timerRef.current);
+    // Run system checks
+    const runChecks = async () => {
+      // Browser check (always passes)
+      // Internet check
+      const online = navigator.onLine;
+      // Camera check
+      let camOk = false;
+      try {
+        const s = await navigator.mediaDevices.getUserMedia({ video: true });
+        s.getTracks().forEach(t => t.stop());
+        camOk = true;
+      } catch {
+        camOk = false;
+      }
+      setChecks({ camera: camOk, browser: true, internet: online });
+      setChecksDone(true);
+    };
+    runChecks();
   }, []);
 
-  useEffect(() => {
-    if (timeLeft === 0 && !submitted) {
-      handleSubmit();
-    }
-  }, [timeLeft, submitted]);
+  const systemItems = [
+    { key: 'camera',   icon: Camera,  label: 'Camera detected',          ok: checks.camera },
+    { key: 'browser',  icon: Monitor, label: 'Browser supported',         ok: checks.browser },
+    { key: 'internet', icon: Wifi,    label: 'Internet connection stable', ok: checks.internet },
+  ];
 
-  const handleSelect = (questionId, answer) => {
-    setAnswers((prev) => ({ ...prev, [questionId]: answer }));
-  };
+  const allPassed = checksDone && checks.browser && checks.internet;
 
-  const handleSubmit = () => {
-    clearInterval(timerRef.current);
-    let score = 0;
-    quiz.questions.forEach((q) => {
-      if (answers[q.id] === q.correct_answer) score++;
-    });
-    const pct = Math.round((score / quiz.questions.length) * 100);
-    setResult({ score, total: quiz.questions.length, percentage: pct });
-    setSubmitted(true);
-  };
+  const instructions = [
+    'Ensure you have a stable internet connection before starting.',
+    'Keep your face fully visible in the camera throughout the assessment.',
+    'Do not switch browser tabs or minimize the window.',
+    'Do not allow another person to appear on camera.',
+    'Once submitted, the assessment cannot be restarted.',
+    `You have ${assessment?.time || 10} minutes to complete all questions.`,
+  ];
 
-  if (submitted && result) {
-    return (
-      <div className="card animate-fadeInUp" style={{ textAlign: 'center', padding: '48px 32px' }}>
-        <div style={{ fontSize: '4rem', marginBottom: '16px' }}>
-          {result.percentage >= 80 ? '🏆' : result.percentage >= 60 ? '👍' : '💪'}
+  return (
+    <div className="start-screen animate-fadeInUp">
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 32 }}>
+        <button className="btn btn-secondary btn-sm" onClick={onCancel}
+          style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <X size={13} /> Cancel
+        </button>
+      </div>
+
+      {/* Assessment Info Card */}
+      <div className="card" style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <span className="badge badge-primary" style={{ textTransform: 'none', fontSize: '0.75rem' }}>
+                {assessment?.type === 'coding' ? 'Coding Challenge' : assessment?.type === 'mock' ? 'Mock Test' : 'MCQ Assessment'}
+              </span>
+              {assessment?.type !== 'coding' && (
+                <span className="badge badge-success" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <Shield size={10} /> Proctored
+                </span>
+              )}
+            </div>
+            <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: 6, letterSpacing: '-0.02em' }}>
+              {assessment?.title}
+            </h1>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
+              {assessment?.topics?.join(' · ')}
+            </p>
+          </div>
         </div>
-        <h2 className="text-2xl font-bold" style={{ marginBottom: '8px' }}>
-          {result.percentage >= 80 ? 'Excellent!' : result.percentage >= 60 ? 'Good Job!' : 'Keep Practicing!'}
-        </h2>
-        <div style={{ fontSize: '3.5rem', fontWeight: 900, background: 'var(--gradient-primary)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', margin: '16px 0' }}>
-          {result.percentage}%
-        </div>
-        <p className="text-secondary" style={{ marginBottom: '24px' }}>
-          You scored <strong style={{ color: 'var(--text-primary)' }}>{result.score} / {result.total}</strong> questions correctly
-        </p>
 
-        {/* Answer Review */}
-        <div style={{ textAlign: 'left', marginBottom: '24px' }}>
-          <h3 className="font-bold text-lg" style={{ marginBottom: '16px' }}>Answer Review</h3>
-          {quiz.questions.map((q, i) => {
-            const isCorrect = answers[q.id] === q.correct_answer;
+        {/* Info grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, marginTop: 24 }}>
+          {[
+            { icon: ClipboardList, label: 'Questions', value: `${assessment?.questions || 10}` },
+            { icon: Clock,         label: 'Duration',  value: `${assessment?.time || 10} min` },
+            { icon: BarChart3,     label: 'Difficulty', value: assessment?.difficulty || 'Medium' },
+          ].map((item, i) => {
+            const Icon = item.icon;
             return (
-              <div key={q.id} className="card" style={{ marginBottom: '12px', borderColor: isCorrect ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)', background: isCorrect ? 'rgba(16,185,129,0.04)' : 'rgba(239,68,68,0.04)' }}>
-                <div className="flex items-center gap-sm" style={{ marginBottom: '8px' }}>
-                  <span>{isCorrect ? '✅' : '❌'}</span>
-                  <span className="font-semibold text-sm">Q{i + 1}. {q.question_text}</span>
-                </div>
-                {!isCorrect && (
-                  <div style={{ fontSize: '0.8rem', color: 'var(--color-danger)', marginBottom: '4px' }}>
-                    Your answer: <em>{answers[q.id] || 'Not answered'}</em>
-                  </div>
-                )}
-                <div style={{ fontSize: '0.8rem', color: 'var(--color-accent)' }}>
-                  ✓ Correct: <strong>{q.correct_answer}</strong>
-                </div>
-                {q.explanation && (
-                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '6px', padding: '8px', background: 'var(--bg-glass)', borderRadius: 'var(--radius-sm)' }}>
-                    💡 {q.explanation}
-                  </div>
-                )}
+              <div key={i} style={{
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+                padding: '16px 12px', borderRadius: 'var(--radius-md)',
+                background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)',
+                textAlign: 'center',
+              }}>
+                <Icon size={18} color="var(--color-primary)" />
+                <span style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)' }}>{item.value}</span>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 500 }}>{item.label}</span>
               </div>
             );
           })}
         </div>
-
-        <div className="flex gap-md" style={{ justifyContent: 'center' }}>
-          <button className="btn btn-secondary" onClick={onFinish}>← Back to Assessments</button>
-          <button className="btn btn-primary" onClick={() => { setSubmitted(false); setAnswers({}); setCurrentQ(0); setTimeLeft(QUIZ_TIME); }}>
-            🔄 Retake Quiz
-          </button>
-        </div>
       </div>
-    );
-  }
 
-  const q = quiz.questions[currentQ];
-  const answered = Object.keys(answers).length;
-
-  return (
-    <div className="animate-fadeIn">
-      {/* Quiz Header */}
-      <div className="card" style={{ marginBottom: '20px', padding: '16px 24px' }}>
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="font-bold text-lg">{quiz.title}</h2>
-            <div className="text-xs text-muted">{answered} of {quiz.questions.length} answered</div>
+      {/* Instructions */}
+      <div className="card" style={{ marginBottom: 20 }}>
+        <h2 className="card-title" style={{ marginBottom: 16 }}>Important Instructions</h2>
+        {instructions.map((inst, i) => (
+          <div key={i} className="instruction-item">
+            <span className="instruction-num">{String(i + 1).padStart(2, '0')}</span>
+            <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>{inst}</span>
           </div>
-          <QuizTimer seconds={timeLeft} onExpire={handleSubmit} />
-          <button className="btn btn-primary" onClick={handleSubmit}>Submit Quiz</button>
-        </div>
-        {/* Progress */}
-        <div className="progress-bar-container" style={{ marginTop: '12px', height: '4px' }}>
-          <div className="progress-bar-fill" style={{ width: `${((currentQ + 1) / quiz.questions.length) * 100}%` }} />
-        </div>
+        ))}
       </div>
 
-      <div className="grid grid-2" style={{ gap: '20px', alignItems: 'start' }}>
-        {/* Question */}
-        <div className="card">
-          <div className="flex items-center gap-sm" style={{ marginBottom: '20px' }}>
-            <div style={{
-              width: 32, height: 32, borderRadius: 'var(--radius-full)',
-              background: 'var(--gradient-primary)', display: 'flex', alignItems: 'center',
-              justifyContent: 'center', fontWeight: 700, fontSize: '0.875rem', flexShrink: 0,
-            }}>
-              {currentQ + 1}
+      {/* System Check */}
+      <div className="card" style={{ marginBottom: 28 }}>
+        <h2 className="card-title" style={{ marginBottom: 16 }}>System Check</h2>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {systemItems.map(({ key, icon: Icon, label, ok }) => (
+            <div key={key} className={`system-check-item ${ok === true ? 'pass' : ''}`}>
+              {!checksDone || ok === null ? (
+                <div style={{
+                  width: 18, height: 18, borderRadius: '50%',
+                  border: '2px solid var(--border-default)', flexShrink: 0,
+                  animation: 'spin 0.8s linear infinite',
+                }} />
+              ) : ok ? (
+                <CheckCircle2 size={18} color="var(--color-success)" />
+              ) : (
+                <AlertTriangle size={18} color="var(--color-warning)" />
+              )}
+              <Icon size={14} />
+              <span style={{ flex: 1 }}>{label}</span>
+              <span style={{
+                fontSize: '0.72rem', fontWeight: 700,
+                color: !checksDone || ok === null ? 'var(--text-muted)' : ok ? 'var(--color-success)' : 'var(--color-warning)',
+              }}>
+                {!checksDone || ok === null ? 'Checking…' : ok ? 'Ready' : 'Warning'}
+              </span>
             </div>
-            <div className="text-xs text-muted">Question {currentQ + 1} of {quiz.questions.length}</div>
-          </div>
-
-          <p className="font-semibold" style={{ fontSize: '1.05rem', lineHeight: 1.6, marginBottom: '24px' }}>
-            {q.question_text}
+          ))}
+        </div>
+        {checksDone && !checks.camera && (
+          <p style={{
+            marginTop: 12, fontSize: '0.8rem', color: 'var(--color-warning)',
+            background: 'var(--color-warning-glow)', padding: '8px 12px',
+            borderRadius: 8, border: '1px solid rgba(217,119,6,0.2)',
+          }}>
+            Camera access is required for proctored assessments. Please allow camera permission and refresh.
           </p>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {q.options.map((opt, i) => {
-              const isSelected = answers[q.id] === opt;
-              return (
-                <button key={i} onClick={() => handleSelect(q.id, opt)}
-                  style={{
-                    width: '100%', textAlign: 'left', padding: '14px 18px',
-                    borderRadius: 'var(--radius-md)', border: `2px solid ${isSelected ? 'var(--color-primary)' : 'var(--border-default)'}`,
-                    background: isSelected ? 'var(--color-primary-glow)' : 'var(--bg-glass)',
-                    color: isSelected ? 'var(--color-primary-light)' : 'var(--text-primary)',
-                    cursor: 'pointer', transition: 'all 0.15s', fontSize: '0.9rem',
-                    display: 'flex', alignItems: 'center', gap: '12px',
-                  }}
-                  onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = 'var(--bg-glass-hover)'; }}
-                  onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'var(--bg-glass)'; }}
-                >
-                  <span style={{
-                    width: 28, height: 28, borderRadius: 'var(--radius-full)', display: 'flex',
-                    alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.8rem',
-                    background: isSelected ? 'var(--color-primary)' : 'var(--bg-elevated)', color: 'white', flexShrink: 0,
-                  }}>
-                    {String.fromCharCode(65 + i)}
-                  </span>
-                  {opt}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Nav Buttons */}
-          <div className="flex justify-between" style={{ marginTop: '24px' }}>
-            <button className="btn btn-secondary" disabled={currentQ === 0} onClick={() => setCurrentQ(c => c - 1)}>← Prev</button>
-            {currentQ < quiz.questions.length - 1
-              ? <button className="btn btn-primary" onClick={() => setCurrentQ(c => c + 1)}>Next →</button>
-              : <button className="btn btn-accent" onClick={handleSubmit}>Submit Quiz ✅</button>
-            }
-          </div>
-        </div>
-
-        {/* Question Navigator */}
-        <div className="card" style={{ position: 'sticky', top: '80px' }}>
-          <h3 className="font-bold" style={{ marginBottom: '16px' }}>Question Navigator</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px', marginBottom: '16px' }}>
-            {quiz.questions.map((_, i) => {
-              const isAnswered = answers[quiz.questions[i].id] !== undefined;
-              const isCurrent = i === currentQ;
-              return (
-                <button key={i} onClick={() => setCurrentQ(i)} style={{
-                  aspectRatio: '1', borderRadius: 'var(--radius-sm)', fontWeight: 700, fontSize: '0.875rem',
-                  border: `2px solid ${isCurrent ? 'var(--color-primary)' : isAnswered ? 'var(--color-accent)' : 'var(--border-default)'}`,
-                  background: isCurrent ? 'var(--color-primary-glow)' : isAnswered ? 'var(--color-accent-glow)' : 'var(--bg-glass)',
-                  color: isCurrent ? 'var(--color-primary-light)' : isAnswered ? 'var(--color-accent-light)' : 'var(--text-muted)',
-                  cursor: 'pointer', transition: 'all 0.15s',
-                }}>
-                  {i + 1}
-                </button>
-              );
-            })}
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.75rem' }}>
-            {[
-              { color: 'var(--color-primary)', label: 'Current' },
-              { color: 'var(--color-accent)', label: 'Answered' },
-              { color: 'var(--border-default)', label: 'Not Answered' },
-            ].map((s, i) => (
-              <div key={i} className="flex items-center gap-sm">
-                <div style={{ width: 12, height: 12, borderRadius: 3, background: s.color, flexShrink: 0 }} />
-                <span className="text-muted">{s.label}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+        )}
       </div>
+
+      {/* Start Button */}
+      <button
+        id="start-assessment-btn"
+        className="btn btn-primary btn-xl w-full"
+        onClick={onStart}
+        disabled={!checksDone}
+        style={{ justifyContent: 'center', fontSize: '1rem' }}
+      >
+        {!checksDone ? (
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ animation: 'spin 0.8s linear infinite' }}>
+              <circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,0.3)" strokeWidth="3" />
+              <path d="M12 2a10 10 0 0 1 10 10" stroke="white" strokeWidth="3" strokeLinecap="round" />
+            </svg>
+            Running system checks…
+          </span>
+        ) : (
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Shield size={16} /> Start Assessment <ChevronRight size={16} />
+          </span>
+        )}
+      </button>
+      <p style={{ textAlign: 'center', fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 12 }}>
+        By starting, you agree to the proctoring and assessment integrity policy.
+      </p>
+
+      <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
     </div>
   );
 }
 
+/* ── Main Assessments Page ───────────────────────────────── */
 export default function AssessmentsPage() {
   const [activeTab, setActiveTab] = useState('all');
   const [activeQuiz, setActiveQuiz] = useState(null);
+  const [startingQuiz, setStartingQuiz] = useState(null); // shows start screen
 
   const quizTypes = [
-    { id: 'all', label: 'All Tests', icon: '📋' },
-    { id: 'mcq', label: 'MCQ Tests', icon: '📝' },
-    { id: 'coding', label: 'Coding', icon: '💻' },
-    { id: 'mock', label: 'Mock Tests', icon: '🎯' },
+    { id: 'all',    label: 'All',    icon: ClipboardList },
+    { id: 'mcq',    label: 'MCQ',    icon: ClipboardList },
+    { id: 'coding', label: 'Coding', icon: Code2 },
+    { id: 'mock',   label: 'Mock',   icon: Target },
   ];
 
   const assessments = [
-    { id: 1, title: 'DSA Fundamentals MCQ', type: 'mcq', questions: 20, time: 30, difficulty: 'medium', topics: ['Arrays', 'Sorting', 'Searching'] },
-    { id: 2, title: 'DBMS Comprehensive Test', type: 'mcq', questions: 25, time: 40, difficulty: 'hard', topics: ['SQL', 'Normalization'] },
-    { id: 3, title: 'Aptitude Reasoning Test', type: 'mcq', questions: 30, time: 45, difficulty: 'medium', topics: ['Quant', 'Logical'] },
-    { id: 4, title: 'Full Mock Placement Test', type: 'mock', questions: 60, time: 90, difficulty: 'hard', topics: ['All Topics'] },
-    { id: 5, title: 'Two Sum Problem', type: 'coding', questions: 1, time: 20, difficulty: 'easy', topics: ['Arrays', 'HashMap'] },
-    { id: 6, title: 'Binary Search Challenge', type: 'coding', questions: 1, time: 15, difficulty: 'medium', topics: ['DSA', 'Binary Search'] },
+    { id: 1, title: 'DSA Fundamentals MCQ',      type: 'mcq',    questions: 20, time: 30, difficulty: 'Medium', topics: ['Arrays', 'Sorting', 'Searching'], proctored: true },
+    { id: 2, title: 'DBMS Comprehensive Test',   type: 'mcq',    questions: 25, time: 40, difficulty: 'Hard',   topics: ['SQL', 'Normalization'], proctored: true },
+    { id: 3, title: 'Aptitude Reasoning Test',   type: 'mcq',    questions: 30, time: 45, difficulty: 'Medium', topics: ['Quant', 'Logical'], proctored: true },
+    { id: 4, title: 'Full Mock Placement Test',  type: 'mock',   questions: 60, time: 90, difficulty: 'Hard',   topics: ['All Topics'], proctored: true },
+    { id: 5, title: 'Two Sum Problem',            type: 'coding', questions: 1,  time: 20, difficulty: 'Easy',   topics: ['Arrays', 'HashMap'], proctored: false },
+    { id: 6, title: 'Binary Search Challenge',   type: 'coding', questions: 1,  time: 15, difficulty: 'Medium', topics: ['DSA', 'Binary Search'], proctored: false },
   ];
 
   const filtered = activeTab === 'all' ? assessments : assessments.filter(a => a.type === activeTab);
 
+  const difficultyColor = { Easy: 'badge-success', Medium: 'badge-warning', Hard: 'badge-danger' };
+  const typeIcon = { mcq: ClipboardList, coding: Code2, mock: Target };
+
+  /* Render active quiz */
   if (activeQuiz) {
     return (
-      <ProtectedLayout title="AI Proctored MCQ Quiz" allowedRoles={['student']}>
+      <ProtectedLayout title="Assessment in Progress" allowedRoles={['student']}>
         <ProctoredMCQQuiz
           quiz={{ id: activeQuiz.id, title: activeQuiz.title, questions: SAMPLE_MCQ }}
           onFinish={() => setActiveQuiz(null)}
@@ -268,70 +229,131 @@ export default function AssessmentsPage() {
     );
   }
 
+  /* Render start screen */
+  if (startingQuiz) {
+    return (
+      <ProtectedLayout title="Assessment Setup" allowedRoles={['student']}>
+        <AssessmentStartScreen
+          assessment={startingQuiz}
+          onStart={() => {
+            setActiveQuiz(startingQuiz);
+            setStartingQuiz(null);
+          }}
+          onCancel={() => setStartingQuiz(null)}
+        />
+      </ProtectedLayout>
+    );
+  }
+
   return (
     <ProtectedLayout title="Assessments" allowedRoles={['student']}>
+      {/* Page Header */}
       <div className="page-header">
-        <h1 className="page-title">Assessments 📝</h1>
-        <p className="page-subtitle">Topic-wise MCQs, coding challenges, and full mock placement tests.</p>
+        <h1 className="page-title">Assessments</h1>
+        <p className="page-subtitle">Topic-wise MCQs, coding challenges, and full mock placement tests — all AI-proctored.</p>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-sm animate-fadeInUp" style={{ marginBottom: '24px' }}>
-        {quizTypes.map((t) => (
-          <button key={t.id}
-            className={`btn ${activeTab === t.id ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setActiveTab(t.id)}>
-            {t.icon} {t.label}
+      {/* Stats */}
+      <div className="grid grid-4 animate-fadeInUp" style={{ marginBottom: 24 }}>
+        {[
+          { icon: CheckCircle2, value: '23',  label: 'Completed',       color: '#16a34a', bg: 'rgba(22,163,74,0.08)' },
+          { icon: BarChart3,    value: '78%', label: 'Avg. Score',       color: '#2563eb', bg: 'rgba(37,99,235,0.08)' },
+          { icon: Flame,        value: '5',   label: 'Day Streak',       color: '#d97706', bg: 'rgba(217,119,6,0.08)' },
+          { icon: Trophy,       value: '#12', label: 'Leaderboard Rank', color: '#7c3aed', bg: 'rgba(124,58,237,0.08)' },
+        ].map((s, i) => {
+          const Icon = s.icon;
+          return (
+            <div key={i} className="stat-card" style={{ borderLeft: `3px solid ${s.color}` }}>
+              <div className="stat-icon" style={{ background: s.bg }}>
+                <Icon size={18} color={s.color} />
+              </div>
+              <div className="stat-value">{s.value}</div>
+              <div className="stat-label">{s.label}</div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Tab Filters */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 20, padding: '5px', background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', width: 'fit-content' }}>
+        {quizTypes.map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            onClick={() => setActiveTab(id)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '7px 16px', borderRadius: 8,
+              background: activeTab === id ? 'var(--color-primary)' : 'transparent',
+              color: activeTab === id ? 'white' : 'var(--text-secondary)',
+              border: 'none', cursor: 'pointer',
+              fontSize: '0.82rem', fontWeight: 600,
+              fontFamily: "'Plus Jakarta Sans', sans-serif",
+              transition: 'all 0.15s',
+            }}
+          >
+            <Icon size={13} />
+            {label}
           </button>
         ))}
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-4 animate-fadeInUp" style={{ marginBottom: '24px' }}>
-        {[
-          { icon: '✅', value: '23', label: 'Tests Completed', color: 'var(--color-accent)' },
-          { icon: '📊', value: '78%', label: 'Average Score', color: 'var(--color-primary)' },
-          { icon: '🔥', value: '5', label: 'Day Streak', color: 'var(--color-warning)' },
-          { icon: '🏆', value: '#12', label: 'Leaderboard Rank', color: '#a855f7' },
-        ].map((s, i) => (
-          <div key={i} className="stat-card">
-            <div className="stat-icon">{s.icon}</div>
-            <div className="stat-value" style={{ color: s.color, fontSize: '1.75rem' }}>{s.value}</div>
-            <div className="stat-label">{s.label}</div>
-          </div>
-        ))}
-      </div>
-
       {/* Assessment List */}
-      <div className="animate-fadeInUp animate-delay-1" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        {filtered.map((a) => (
-          <div key={a.id} className="quiz-card">
-            <div className="quiz-icon" style={{
-              background: a.type === 'mock' ? 'rgba(245,158,11,0.15)' : a.type === 'coding' ? 'var(--color-accent-glow)' : 'var(--color-primary-glow)',
-            }}>
-              {a.type === 'mock' ? '🎯' : a.type === 'coding' ? '💻' : '📝'}
-            </div>
-            <div style={{ flex: 1 }}>
-              <div className="flex items-center gap-sm" style={{ marginBottom: '4px' }}>
-                <span className="font-bold">{a.title}</span>
-                <span className={`badge badge-${a.difficulty === 'hard' ? 'danger' : a.difficulty === 'medium' ? 'warning' : 'accent'}`}>
-                  {a.difficulty}
-                </span>
-              </div>
-              <div className="flex gap-md text-xs text-muted">
-                <span>📋 {a.questions} questions</span>
-                <span>⏱ {a.time} min</span>
-                <span>🏷 {a.topics.join(', ')}</span>
-              </div>
-            </div>
-            <button
-              className="btn btn-primary btn-sm"
-              onClick={() => a.type === 'mcq' ? setActiveQuiz(a) : a.type === 'coding' ? window.location.href = '/student/code' : setActiveQuiz(a)}
-            >
-              {a.type === 'coding' ? 'Open Editor →' : 'Start Test →'}
-            </button>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }} className="animate-fadeIn">
+        {filtered.length === 0 && (
+          <div className="card" style={{ textAlign: 'center', padding: '56px 32px' }}>
+            <ClipboardList size={40} color="var(--text-muted)" style={{ margin: '0 auto 16px' }} />
+            <h3 style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>No assessments here</h3>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>No {activeTab} assessments available at this time.</p>
           </div>
-        ))}
+        )}
+        {filtered.map((a) => {
+          const TypeIcon = typeIcon[a.type] || ClipboardList;
+          const bgMap = { mcq: 'rgba(37,99,235,0.08)', coding: 'rgba(14,165,233,0.08)', mock: 'rgba(217,119,6,0.08)' };
+          const colorMap = { mcq: '#2563eb', coding: '#0ea5e9', mock: '#d97706' };
+          return (
+            <div key={a.id} className="quiz-card">
+              <div className="quiz-icon" style={{ background: bgMap[a.type] }}>
+                <TypeIcon size={20} color={colorMap[a.type]} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5, flexWrap: 'wrap' }}>
+                  <span style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)' }}>{a.title}</span>
+                  <span className={`badge ${difficultyColor[a.difficulty]}`}>{a.difficulty}</span>
+                  {a.proctored && (
+                    <span className="badge badge-primary" style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                      <Shield size={9} /> Proctored
+                    </span>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 500 }}>
+                    <ClipboardList size={12} /> {a.questions} questions
+                  </span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 500 }}>
+                    <Clock size={12} /> {a.time} min
+                  </span>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                    {a.topics.join(', ')}
+                  </span>
+                </div>
+              </div>
+              <button
+                id={`start-btn-${a.id}`}
+                className="btn btn-primary btn-sm"
+                style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 5 }}
+                onClick={() => {
+                  if (a.type === 'coding') {
+                    window.location.href = '/student/code';
+                  } else {
+                    setStartingQuiz(a);
+                  }
+                }}
+              >
+                {a.type === 'coding' ? 'Open Editor' : 'Start Test'} <ChevronRight size={13} />
+              </button>
+            </div>
+          );
+        })}
       </div>
     </ProtectedLayout>
   );

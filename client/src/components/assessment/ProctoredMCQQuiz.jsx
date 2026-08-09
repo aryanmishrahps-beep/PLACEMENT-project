@@ -2,36 +2,96 @@ import { useState, useEffect, useRef } from 'react';
 import WebcamProctoring from '../proctoring/WebcamProctoring';
 import { assessmentService } from '../../services/assessmentService';
 import { useAuth } from '../../context/AuthContext';
+import { Shield, Clock, ChevronLeft, ChevronRight, CheckCircle, AlertTriangle, X } from 'lucide-react';
 
 const QUIZ_TIME = 10 * 60; // 10 minutes
 
+/* ── Timer ─────────────────────────────────────────────── */
 function QuizTimer({ seconds, onExpire }) {
   const mins = String(Math.floor(seconds / 60)).padStart(2, '0');
   const secs = String(seconds % 60).padStart(2, '0');
   const isWarning = seconds < 120;
+  const isCritical = seconds < 60;
 
-  useEffect(() => {
-    if (seconds === 0) onExpire();
-  }, [seconds]);
+  useEffect(() => { if (seconds === 0) onExpire(); }, [seconds]);
 
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: '8px',
-      background: isWarning ? 'rgba(239,68,68,0.15)' : 'var(--bg-glass)',
-      border: `1px solid ${isWarning ? 'rgba(239,68,68,0.4)' : 'var(--border-default)'}`,
-      borderRadius: 'var(--radius-full)',
-      padding: '8px 16px',
-      fontFamily: "'JetBrains Mono', monospace",
-      fontWeight: 700,
-      fontSize: '1.1rem',
-      color: isWarning ? 'var(--color-danger)' : 'var(--text-primary)',
-      animation: isWarning ? 'pulse-glow 1s infinite' : 'none',
-    }}>
-      ⏱ {mins}:{secs}
+    <div className={`timer-chip ${isWarning ? 'warning' : ''}`}>
+      <Clock size={14} />
+      {mins}:{secs}
+      {isCritical && <span style={{ fontSize: '0.7rem', fontWeight: 700 }}>— Submit now</span>}
     </div>
   );
 }
 
+/* ── Submit Confirmation Modal ──────────────────────────── */
+function SubmitModal({ answered, total, onConfirm, onCancel }) {
+  const unanswered = total - answered;
+  return (
+    <div className="modal-overlay" onClick={onCancel}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <div className="modal-icon" style={{
+            background: unanswered > 0 ? 'rgba(217,119,6,0.1)' : 'rgba(22,163,74,0.1)',
+            border: `1px solid ${unanswered > 0 ? 'rgba(217,119,6,0.3)' : 'rgba(22,163,74,0.3)'}`,
+          }}>
+            {unanswered > 0
+              ? <AlertTriangle size={24} color="var(--color-warning)" />
+              : <CheckCircle size={24} color="var(--color-success)" />}
+          </div>
+          <h2 className="modal-title">Submit Assessment?</h2>
+        </div>
+        <div className="modal-body">
+          {unanswered > 0 ? (
+            <>
+              You've answered <strong style={{ color: 'var(--text-primary)' }}>{answered} of {total}</strong> questions.
+              <br />
+              <span style={{ color: 'var(--color-warning)' }}>{unanswered} question{unanswered > 1 ? 's' : ''} remain unanswered.</span>
+              <br /><br />
+              Are you sure you want to submit? Unanswered questions will be marked incorrect.
+            </>
+          ) : (
+            <>
+              You've answered all <strong style={{ color: 'var(--text-primary)' }}>{total}</strong> questions.
+              <br /><br />
+              Are you ready to submit your assessment?
+            </>
+          )}
+        </div>
+        <div className="modal-actions">
+          <button className="btn btn-secondary" style={{ flex: 1, justifyContent: 'center' }} onClick={onCancel}>
+            Continue
+          </button>
+          <button className="btn btn-primary" style={{ flex: 1, justifyContent: 'center' }} onClick={onConfirm}>
+            Submit Assessment
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Proctoring Warning Toast ───────────────────────────── */
+function ProctoringToast({ message, onDismiss }) {
+  useEffect(() => {
+    const t = setTimeout(onDismiss, 4500);
+    return () => clearTimeout(t);
+  }, []);
+
+  return (
+    <div className="toast-container">
+      <div className="toast toast-warning" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <AlertTriangle size={15} color="#d97706" />
+        <span>Proctoring Alert: {message}</span>
+        <button onClick={onDismiss} style={{ background: 'none', border: 'none', cursor: 'pointer', marginLeft: 4 }}>
+          <X size={13} color="#92400e" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ── Main ProctoredMCQQuiz ──────────────────────────────── */
 export default function ProctoredMCQQuiz({ quiz, onFinish }) {
   const { user } = useAuth();
   const [session, setSession] = useState(null);
@@ -41,225 +101,247 @@ export default function ProctoredMCQQuiz({ quiz, onFinish }) {
   const [submitted, setSubmitted] = useState(false);
   const [result, setResult] = useState(null);
   const [warningToast, setWarningToast] = useState(null);
-
+  const [showSubmitModal, setShowSubmitModal] = useState(false);
   const timerRef = useRef(null);
 
-  // 1. Initialize or load Firestore session on mount
+  // 1. Init Firestore session
   useEffect(() => {
     async function initSession() {
       const candidateId = user?.id || user?.uid || 'student_demo_1';
-      const candidateName = user?.name || 'Candidate';
-      const candidateEmail = user?.email || '';
-
       const sessionData = await assessmentService.startOrGetSession({
         assessmentId: quiz.id || 'dsa_mcq',
         assessmentTitle: quiz.title,
         candidateId,
-        candidateName,
-        candidateEmail,
-        maxViolations: 3
+        candidateName: user?.name || 'Candidate',
+        candidateEmail: user?.email || '',
+        maxViolations: 3,
       });
-
       setSession(sessionData);
-
-      if (sessionData) {
-        if (sessionData.answers) setAnswers(sessionData.answers);
-        if (sessionData.status === 'submitted') {
-          setSubmitted(true);
-        }
-      }
+      if (sessionData?.answers) setAnswers(sessionData.answers);
+      if (sessionData?.status === 'submitted') setSubmitted(true);
     }
-
     initSession();
   }, [quiz.id, user]);
 
-  // 2. Real-time Firestore Subscription for Instant Anti-Cheating Locking
+  // 2. Realtime Firestore subscription
   useEffect(() => {
     if (!session?.id) return;
-
-    const unsubscribe = assessmentService.subscribeSession(session.id, (updatedSession) => {
-      setSession(updatedSession);
-      if (updatedSession.status === 'cancelled' || updatedSession.status === 'submitted') {
+    const unsubscribe = assessmentService.subscribeSession(session.id, (updated) => {
+      setSession(updated);
+      if (updated.status === 'cancelled' || updated.status === 'submitted') {
         clearInterval(timerRef.current);
       }
     });
-
     return () => unsubscribe();
   }, [session?.id]);
 
-  // 3. Quiz Countdown Timer
+  // 3. Timer
   useEffect(() => {
     if (session?.status === 'active' && !submitted) {
-      timerRef.current = setInterval(() => {
-        setTimeLeft((t) => (t > 0 ? t - 1 : 0));
-      }, 1000);
+      timerRef.current = setInterval(() => setTimeLeft(t => t > 0 ? t - 1 : 0), 1000);
     }
     return () => clearInterval(timerRef.current);
   }, [session?.status, submitted]);
 
-  // Auto-submit on timer zero
   useEffect(() => {
-    if (timeLeft === 0 && !submitted && session?.status === 'active') {
-      handleSubmit();
-    }
+    if (timeLeft === 0 && !submitted && session?.status === 'active') handleSubmit();
   }, [timeLeft, submitted, session?.status]);
 
-  // Handle Option Select
   const handleSelect = (questionId, answer) => {
     if (session?.status !== 'active') return;
-    setAnswers((prev) => ({ ...prev, [questionId]: answer }));
+    setAnswers(prev => ({ ...prev, [questionId]: answer }));
   };
 
-  // Handle Proctoring Violation Triggered by Webcam/Computer Vision
   const handleViolationDetected = async ({ type, severity, message }) => {
     if (!session || session.status !== 'active') return;
-
-    // Show warning toast overlay
     setWarningToast({ type, message });
-    setTimeout(() => setWarningToast(null), 4500);
-
-    // Call atomic backend API / Firestore update
-    const updated = await assessmentService.recordViolation({
-      sessionId: session.id,
-      type,
-      severity,
-      message
-    });
-
-    if (updated) {
-      setSession(updated);
-    }
+    const updated = await assessmentService.recordViolation({ sessionId: session.id, type, severity, message });
+    if (updated) setSession(updated);
   };
 
-  // Handle Quiz Submission
   const handleSubmit = async () => {
+    setShowSubmitModal(false);
     clearInterval(timerRef.current);
     let score = 0;
-    quiz.questions.forEach((q) => {
-      if (answers[q.id] === q.correct_answer) score++;
-    });
+    quiz.questions.forEach(q => { if (answers[q.id] === q.correct_answer) score++; });
     const pct = Math.round((score / quiz.questions.length) * 100);
-    const resObj = { score, total: quiz.questions.length, percentage: pct };
-    
-    setResult(resObj);
+    setResult({ score, total: quiz.questions.length, percentage: pct });
     setSubmitted(true);
-
     if (session?.id) {
-      await assessmentService.submitSession({
-        sessionId: session.id,
-        answers,
-        score
-      });
+      await assessmentService.submitSession({ sessionId: session.id, answers, score });
     }
   };
 
-  // ─── CANCELLED ASSESSMENT SCREEN ─────────────────────────────────────────────
+  // ── CANCELLED SCREEN ─────────────────────────────────────
   if (session?.status === 'cancelled') {
     return (
-      <div className="card animate-fadeInUp" style={{
-        textAlign: 'center',
-        padding: '56px 32px',
-        border: '2px solid rgba(239, 68, 68, 0.4)',
-        background: 'rgba(239, 68, 68, 0.04)',
-        maxWidth: '720px',
-        margin: '32px auto'
-      }}>
-        <div style={{ fontSize: '4.5rem', marginBottom: '16px' }}>🚨</div>
-        <h1 style={{ fontSize: '2rem', fontWeight: 900, color: 'var(--color-danger, #ef4444)', marginBottom: '12px' }}>
-          ASSESSMENT CANCELLED
-        </h1>
-        <div className="badge badge-danger" style={{ fontSize: '0.9rem', padding: '6px 16px', marginBottom: '24px' }}>
-          Proctoring Violation Limit Exceeded ({session.violationCount}/{session.maxViolations || 3})
-        </div>
-
-        <div style={{
-          background: 'var(--bg-glass)',
-          border: '1px solid rgba(239, 68, 68, 0.2)',
-          borderRadius: 'var(--radius-md)',
-          padding: '20px',
-          textAlign: 'left',
-          marginBottom: '28px',
-          fontSize: '0.9rem'
+      <div style={{ maxWidth: 580, margin: '60px auto', padding: '0 24px' }}>
+        <div className="card animate-fadeInUp" style={{
+          textAlign: 'center', padding: '52px 36px',
+          borderColor: 'rgba(220,38,38,0.2)',
         }}>
-          <div style={{ fontWeight: 700, marginBottom: '8px', color: 'var(--text-primary)' }}>
-            Reason for Termination:
+          <div style={{
+            width: 64, height: 64, borderRadius: '50%',
+            background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.25)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px',
+          }}>
+            <AlertTriangle size={28} color="var(--color-danger)" />
           </div>
-          <div style={{ color: 'var(--color-danger, #ef4444)', fontFamily: 'monospace', marginBottom: '12px' }}>
-            {session.cancellationReason || 'Multiple unverified proctoring violations detected.'}
+          <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: 8, letterSpacing: '-0.02em' }}>
+            Assessment Terminated
+          </h1>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: 24 }}>
+            This assessment has been terminated because the permitted proctoring violation limit was exceeded.
+          </p>
+
+          <div style={{
+            background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)',
+            borderRadius: 'var(--radius-md)', padding: '16px 20px', textAlign: 'left', marginBottom: 28,
+          }}>
+            {[
+              { label: 'Assessment', value: quiz.title },
+              { label: 'Status', value: 'Terminated' },
+              { label: 'Violations', value: `${session.violationCount} / ${session.maxViolations || 3}` },
+              { label: 'Time', value: session.cancelledAt ? new Date(session.cancelledAt).toLocaleTimeString() : new Date().toLocaleTimeString() },
+            ].map(({ label, value }) => (
+              <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border-subtle)' }}>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 500 }}>{label}</span>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-primary)', fontWeight: 600 }}>{value}</span>
+              </div>
+            ))}
           </div>
-          <div className="text-xs text-muted">
-            Cancelled At: {session.cancelledAt ? new Date(session.cancelledAt).toLocaleString() : new Date().toLocaleString()}
-          </div>
+
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: 28, lineHeight: 1.6 }}>
+            This assessment result has been recorded in the system. Please contact your recruiter or administrator if you believe this was in error.
+          </p>
+
+          <button className="btn btn-secondary" onClick={onFinish} style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+            <ChevronLeft size={14} /> Return to Dashboard
+          </button>
         </div>
-
-        <p className="text-secondary" style={{ marginBottom: '28px', lineHeight: 1.6 }}>
-          This assessment has been locked and permanently recorded in Cloud Firestore. Re-entry or refreshing the page is disabled per institution proctoring rules.
-        </p>
-
-        <button className="btn btn-secondary" onClick={onFinish}>
-          ← Return to Assessments
-        </button>
       </div>
     );
   }
 
-  // ─── SUBMITTED / RESULTS SCREEN ──────────────────────────────────────────────
+  // ── RESULT SCREEN ─────────────────────────────────────────
   if (submitted || session?.status === 'submitted') {
     const finalScore = result?.score ?? session?.score ?? 0;
     const finalTotal = result?.total ?? quiz.questions.length;
     const pct = result?.percentage ?? Math.round((finalScore / finalTotal) * 100);
+    const submissionId = `ASSESS-${Math.random().toString(36).substr(2, 5).toUpperCase()}`;
 
     return (
-      <div className="card animate-fadeInUp" style={{ textAlign: 'center', padding: '48px 32px' }}>
-        <div style={{ fontSize: '4rem', marginBottom: '16px' }}>
-          {pct >= 80 ? '🏆' : pct >= 60 ? '👍' : '💪'}
-        </div>
-        <h2 className="text-2xl font-bold" style={{ marginBottom: '8px' }}>
-          {pct >= 80 ? 'Excellent!' : pct >= 60 ? 'Good Job!' : 'Keep Practicing!'}
-        </h2>
-        <div style={{ fontSize: '3.5rem', fontWeight: 900, background: 'var(--gradient-primary)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', margin: '16px 0' }}>
-          {pct}%
-        </div>
-        <p className="text-secondary" style={{ marginBottom: '24px' }}>
-          You scored <strong style={{ color: 'var(--text-primary)' }}>{finalScore} / {finalTotal}</strong> questions correctly
-        </p>
+      <div style={{ maxWidth: 640, margin: '60px auto', padding: '0 24px' }}>
+        <div className="card animate-fadeInUp" style={{ textAlign: 'center', padding: '52px 36px' }}>
+          {/* Success icon */}
+          <div style={{
+            width: 72, height: 72, borderRadius: '50%',
+            background: pct >= 60 ? 'rgba(22,163,74,0.1)' : 'rgba(220,38,38,0.08)',
+            border: `1px solid ${pct >= 60 ? 'rgba(22,163,74,0.3)' : 'rgba(220,38,38,0.25)'}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px',
+          }}>
+            <CheckCircle size={34} color={pct >= 60 ? 'var(--color-success)' : 'var(--color-danger)'} />
+          </div>
 
-        {/* Answer Review */}
-        <div style={{ textAlign: 'left', marginBottom: '24px' }}>
-          <h3 className="font-bold text-lg" style={{ marginBottom: '16px' }}>Answer Review</h3>
-          {quiz.questions.map((q, i) => {
-            const isCorrect = answers[q.id] === q.correct_answer;
-            return (
-              <div key={q.id} className="card" style={{ marginBottom: '12px', borderColor: isCorrect ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)', background: isCorrect ? 'rgba(16,185,129,0.04)' : 'rgba(239,68,68,0.04)' }}>
-                <div className="flex items-center gap-sm" style={{ marginBottom: '8px' }}>
-                  <span>{isCorrect ? '✅' : '❌'}</span>
-                  <span className="font-semibold text-sm">Q{i + 1}. {q.question_text}</span>
-                </div>
-                {!isCorrect && (
-                  <div style={{ fontSize: '0.8rem', color: 'var(--color-danger)', marginBottom: '4px' }}>
-                    Your answer: <em>{answers[q.id] || 'Not answered'}</em>
-                  </div>
-                )}
-                <div style={{ fontSize: '0.8rem', color: 'var(--color-accent)' }}>
-                  ✓ Correct: <strong>{q.correct_answer}</strong>
-                </div>
+          <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: 6, letterSpacing: '-0.02em' }}>
+            Assessment Submitted
+          </h1>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: 28 }}>
+            Your responses have been successfully recorded.
+          </p>
+
+          {/* Score */}
+          <div style={{
+            fontSize: '3.5rem', fontWeight: 900, color: pct >= 80 ? 'var(--color-success)' : pct >= 60 ? 'var(--color-warning)' : 'var(--color-danger)',
+            letterSpacing: '-0.04em', lineHeight: 1, marginBottom: 8,
+          }}>
+            {pct}%
+          </div>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: 32 }}>
+            {finalScore} correct out of {finalTotal} questions
+          </p>
+
+          {/* Submission details */}
+          <div style={{
+            background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)',
+            borderRadius: 'var(--radius-md)', padding: '16px 20px', textAlign: 'left', marginBottom: 28,
+          }}>
+            {[
+              { label: 'Submission ID', value: `#${submissionId}` },
+              { label: 'Assessment', value: quiz.title },
+              { label: 'Submitted', value: `Today, ${new Date().toLocaleTimeString()}` },
+            ].map(({ label, value }) => (
+              <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid var(--border-subtle)' }}>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 500 }}>{label}</span>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-primary)', fontWeight: 700, fontFamily: label === 'Submission ID' ? 'monospace' : 'inherit' }}>{value}</span>
               </div>
-            );
-          })}
-        </div>
+            ))}
+          </div>
 
-        <button className="btn btn-secondary" onClick={onFinish}>← Back to Assessments</button>
+          {/* Answer Review */}
+          <div style={{ textAlign: 'left', marginBottom: 28 }}>
+            <h3 style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)', marginBottom: 12 }}>Answer Review</h3>
+            {quiz.questions.map((q, i) => {
+              const isCorrect = answers[q.id] === q.correct_answer;
+              return (
+                <div key={q.id} style={{
+                  padding: '10px 14px', borderRadius: 8, marginBottom: 6,
+                  background: isCorrect ? 'rgba(22,163,74,0.05)' : 'rgba(220,38,38,0.05)',
+                  border: `1px solid ${isCorrect ? 'rgba(22,163,74,0.2)' : 'rgba(220,38,38,0.2)'}`,
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                    <div style={{ flexShrink: 0, marginTop: 1 }}>
+                      {isCorrect
+                        ? <CheckCircle size={14} color="var(--color-success)" />
+                        : <X size={14} color="var(--color-danger)" />}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>Q{i + 1}. {q.question_text}</p>
+                      {!isCorrect && (
+                        <p style={{ fontSize: '0.75rem', color: 'var(--color-danger)', marginBottom: 2 }}>
+                          Your answer: {answers[q.id] || 'Not answered'}
+                        </p>
+                      )}
+                      <p style={{ fontSize: '0.75rem', color: 'var(--color-success)' }}>
+                        Correct: {q.correct_answer}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <button className="btn btn-primary" onClick={onFinish} style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+            <ChevronLeft size={14} /> Back to Dashboard
+          </button>
+        </div>
       </div>
     );
   }
 
-  // ─── ACTIVE TEST QUESTION INTERFACE ──────────────────────────────────────────
+  // ── ACTIVE QUIZ ───────────────────────────────────────────
   const q = quiz.questions[currentQ];
   const answered = Object.keys(answers).length;
 
   return (
-    <div className="animate-fadeIn" style={{ position: 'relative' }}>
-      {/* Real-time Webcam Proctoring Component */}
+    <div className="assessment-shell">
+      {/* Proctoring warning toast */}
+      {warningToast && (
+        <ProctoringToast message={warningToast.message} onDismiss={() => setWarningToast(null)} />
+      )}
+
+      {/* Submit confirmation modal */}
+      {showSubmitModal && (
+        <SubmitModal
+          answered={answered}
+          total={quiz.questions.length}
+          onConfirm={handleSubmit}
+          onCancel={() => setShowSubmitModal(false)}
+        />
+      )}
+
+      {/* Webcam Proctoring Widget */}
       <WebcamProctoring
         isActive={session?.status === 'active'}
         onViolationDetected={handleViolationDetected}
@@ -267,143 +349,174 @@ export default function ProctoredMCQQuiz({ quiz, onFinish }) {
         maxViolations={session?.maxViolations || 3}
       />
 
-      {/* Warning Toast Notification Overlay */}
-      {warningToast && (
-        <div style={{
-          position: 'fixed',
-          top: '80px',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          zIndex: 10000,
-          background: 'rgba(239, 68, 68, 0.95)',
-          color: 'white',
-          padding: '12px 24px',
-          borderRadius: '30px',
-          fontWeight: 700,
-          fontSize: '0.9rem',
-          boxShadow: '0 10px 25px rgba(239, 68, 68, 0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '10px',
-          animation: 'bounce 0.4s ease'
-        }}>
-          <span>⚠️ PROCTORING WARNING:</span>
-          <span>{warningToast.message}</span>
-        </div>
-      )}
-
-      {/* Quiz Header */}
-      <div className="card" style={{ marginBottom: '20px', padding: '16px 24px' }}>
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-sm">
-              <h2 className="font-bold text-lg">{quiz.title}</h2>
-              <span className="badge badge-accent" style={{ fontSize: '0.72rem' }}>📷 AI Proctored</span>
-            </div>
-            <div className="text-xs text-muted">{answered} of {quiz.questions.length} answered</div>
+      {/* ── Header ── */}
+      <div className="assessment-header">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{
+            width: 28, height: 28, background: 'linear-gradient(135deg,#1d4ed8,#3b82f6)',
+            borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <Shield size={14} color="white" strokeWidth={2.5} />
           </div>
-          <QuizTimer seconds={timeLeft} onExpire={handleSubmit} />
-          <button className="btn btn-primary" onClick={handleSubmit}>Submit Quiz</button>
+          <span style={{ fontWeight: 800, fontSize: '0.9rem', color: 'var(--text-primary)' }}>AssessHub</span>
+          <span style={{ color: 'var(--border-default)' }}>·</span>
+          <span style={{ fontWeight: 600, fontSize: '0.875rem', color: 'var(--text-secondary)' }}>{quiz.title}</span>
         </div>
-        {/* Progress */}
-        <div className="progress-bar-container" style={{ marginTop: '12px', height: '4px' }}>
-          <div className="progress-bar-fill" style={{ width: `${((currentQ + 1) / quiz.questions.length) * 100}%` }} />
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <QuizTimer seconds={timeLeft} onExpire={handleSubmit} />
+          <button
+            className="btn btn-primary btn-sm"
+            id="submit-quiz-btn"
+            onClick={() => setShowSubmitModal(true)}
+            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+          >
+            Submit
+          </button>
         </div>
       </div>
 
-      <div className="grid grid-2" style={{ gap: '20px', alignItems: 'start' }}>
+      {/* Progress bar */}
+      <div style={{ height: 3, background: 'var(--border-subtle)' }}>
+        <div style={{
+          height: '100%', background: 'var(--color-primary)',
+          width: `${((currentQ + 1) / quiz.questions.length) * 100}%`,
+          transition: 'width 0.3s ease',
+        }} />
+      </div>
+
+      {/* ── Body ── */}
+      <div className="assessment-body">
         {/* Question Panel */}
-        <div className="card">
-          <div className="flex items-center gap-sm" style={{ marginBottom: '20px' }}>
-            <div style={{
-              width: 32, height: 32, borderRadius: 'var(--radius-full)',
-              background: 'var(--gradient-primary)', display: 'flex', alignItems: 'center',
-              justifyContent: 'center', fontWeight: 700, fontSize: '0.875rem', flexShrink: 0,
-            }}>
-              {currentQ + 1}
-            </div>
-            <div className="text-xs text-muted">Question {currentQ + 1} of {quiz.questions.length}</div>
+        <div className="question-card animate-fadeIn">
+          <div className="question-number-badge">
+            Question {currentQ + 1} of {quiz.questions.length}
           </div>
 
-          <p className="font-semibold" style={{ fontSize: '1.05rem', lineHeight: 1.6, marginBottom: '24px' }}>
-            {q.question_text}
-          </p>
+          <p className="question-text">{q.question_text}</p>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <div>
             {q.options.map((opt, i) => {
               const isSelected = answers[q.id] === opt;
               return (
-                <button key={i} onClick={() => handleSelect(q.id, opt)}
-                  style={{
-                    width: '100%', textAlign: 'left', padding: '14px 18px',
-                    borderRadius: 'var(--radius-md)', border: `2px solid ${isSelected ? 'var(--color-primary)' : 'var(--border-default)'}`,
-                    background: isSelected ? 'var(--color-primary-glow)' : 'var(--bg-glass)',
-                    color: isSelected ? 'var(--color-primary-light)' : 'var(--text-primary)',
-                    cursor: 'pointer', transition: 'all 0.15s', fontSize: '0.9rem',
-                    display: 'flex', alignItems: 'center', gap: '12px',
-                  }}
+                <button
+                  key={i}
+                  className={`answer-option ${isSelected ? 'selected' : ''}`}
+                  onClick={() => handleSelect(q.id, opt)}
+                  disabled={session?.status !== 'active'}
                 >
-                  <span style={{
-                    width: 28, height: 28, borderRadius: 'var(--radius-full)', display: 'flex',
-                    alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.8rem',
-                    background: isSelected ? 'var(--color-primary)' : 'var(--bg-elevated)', color: 'white', flexShrink: 0,
-                  }}>
-                    {String.fromCharCode(65 + i)}
-                  </span>
+                  <span className="answer-option-letter">{String.fromCharCode(65 + i)}</span>
                   {opt}
                 </button>
               );
             })}
           </div>
 
-          {/* Nav Buttons */}
-          <div className="flex justify-between" style={{ marginTop: '24px' }}>
-            <button className="btn btn-secondary" disabled={currentQ === 0} onClick={() => setCurrentQ(c => c - 1)}>← Prev</button>
-            {currentQ < quiz.questions.length - 1
-              ? <button className="btn btn-primary" onClick={() => setCurrentQ(c => c + 1)}>Next →</button>
-              : <button className="btn btn-accent" onClick={handleSubmit}>Submit Quiz ✅</button>
-            }
+          {/* Navigation */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 24, paddingTop: 20, borderTop: '1px solid var(--border-subtle)' }}>
+            <button
+              className="btn btn-secondary"
+              disabled={currentQ === 0}
+              onClick={() => setCurrentQ(c => c - 1)}
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              <ChevronLeft size={14} /> Previous
+            </button>
+            {currentQ < quiz.questions.length - 1 ? (
+              <button
+                className="btn btn-primary"
+                onClick={() => setCurrentQ(c => c + 1)}
+                style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+              >
+                Next <ChevronRight size={14} />
+              </button>
+            ) : (
+              <button
+                className="btn btn-success"
+                onClick={() => setShowSubmitModal(true)}
+                style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+              >
+                <CheckCircle size={14} /> Submit Assessment
+              </button>
+            )}
           </div>
         </div>
 
         {/* Question Navigator */}
-        <div className="card" style={{ position: 'sticky', top: '80px' }}>
-          <h3 className="font-bold" style={{ marginBottom: '16px' }}>Question Navigator</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px', marginBottom: '16px' }}>
+        <div className="question-nav-card">
+          <div style={{ marginBottom: 14 }}>
+            <h3 style={{ fontWeight: 700, fontSize: '0.875rem', color: 'var(--text-primary)', marginBottom: 4 }}>Questions</h3>
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{answered} of {quiz.questions.length} answered</p>
+          </div>
+
+          <div className="q-nav-grid">
             {quiz.questions.map((_, i) => {
               const isAnswered = answers[quiz.questions[i].id] !== undefined;
               const isCurrent = i === currentQ;
               return (
-                <button key={i} onClick={() => setCurrentQ(i)} style={{
-                  aspectRatio: '1', borderRadius: 'var(--radius-sm)', fontWeight: 700, fontSize: '0.875rem',
-                  border: `2px solid ${isCurrent ? 'var(--color-primary)' : isAnswered ? 'var(--color-accent)' : 'var(--border-default)'}`,
-                  background: isCurrent ? 'var(--color-primary-glow)' : isAnswered ? 'var(--color-accent-glow)' : 'var(--bg-glass)',
-                  color: isCurrent ? 'var(--color-primary-light)' : isAnswered ? 'var(--color-accent-light)' : 'var(--text-muted)',
-                  cursor: 'pointer', transition: 'all 0.15s',
-                }}>
+                <button
+                  key={i}
+                  className={`q-nav-btn ${isCurrent ? 'current' : isAnswered ? 'answered' : ''}`}
+                  onClick={() => setCurrentQ(i)}
+                >
                   {i + 1}
                 </button>
               );
             })}
           </div>
 
-          {/* Security Status Box */}
+          {/* Legend */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
+            {[
+              { cls: 'current',  label: 'Current' },
+              { cls: 'answered', label: 'Answered' },
+              { cls: '',         label: 'Not answered' },
+            ].map(({ cls, label }) => (
+              <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <div className={`q-nav-btn ${cls}`} style={{ width: 14, height: 14, aspectRatio: 'auto', padding: 0, minWidth: 14, fontSize: 0 }} />
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{label}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Proctoring status */}
           <div style={{
-            padding: '12px',
-            borderRadius: 'var(--radius-sm)',
-            background: 'rgba(59, 130, 246, 0.08)',
-            border: '1px solid rgba(59, 130, 246, 0.2)',
-            fontSize: '0.75rem',
-            lineHeight: 1.5,
-            color: 'var(--text-secondary)'
+            padding: '10px 12px', borderRadius: 8,
+            background: 'rgba(37,99,235,0.06)', border: '1px solid rgba(37,99,235,0.15)',
           }}>
-            <div style={{ fontWeight: 700, color: 'var(--color-primary)', marginBottom: '4px' }}>
-              🔒 Proctored Environment Active
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 }}>
+              <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#22c55e', animation: 'pulse 1.5s ease infinite' }} />
+              <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--color-primary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Proctoring Active
+              </span>
             </div>
-            Do not switch tabs, minimize window, or leave the webcam frame. Any violation will be logged atomically to Firestore.
+            {session?.violationCount > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 4 }}>
+                <AlertTriangle size={11} color="var(--color-warning)" />
+                <span style={{ fontSize: '0.72rem', color: 'var(--color-warning)', fontWeight: 600 }}>
+                  {session.violationCount}/{session.maxViolations || 3} warnings
+                </span>
+              </div>
+            )}
+            <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+              Stay visible on camera and do not leave this window.
+            </p>
           </div>
         </div>
       </div>
+
+      {/* ── Footer ── */}
+      <div className="assessment-footer">
+        <div className="proctor-badge" style={{ fontSize: '0.75rem' }}>
+          <div className="proctor-dot" />
+          Proctoring Active
+        </div>
+        <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+          Question {currentQ + 1} / {quiz.questions.length}
+        </span>
+      </div>
+
+      <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}`}</style>
     </div>
   );
 }

@@ -1,33 +1,57 @@
 import { useEffect, useRef, useState } from 'react';
+import { Camera, Minimize2, Maximize2, AlertTriangle, Shield, Activity } from 'lucide-react';
+import { FaceTracker, CONFIG } from '../../utils/faceTracker';
+import FaceMovementGraph from './FaceMovementGraph';
+import { assessmentService } from '../../services/assessmentService';
 
 /**
- * Computer Vision + Browser Event Webcam Proctoring Component
+ * AI Webcam Proctoring Component with Smooth Real-Time Face Movement Detection
  */
-export default function WebcamProctoring({ isActive, onViolationDetected, currentViolations = 0, maxViolations = 3 }) {
+export default function WebcamProctoring({
+  isActive,
+  sessionId,
+  onViolationDetected,
+  currentViolations = 0,
+  maxViolations = 3,
+  showGraphInWidget = true
+}) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+
+  const trackerRef = useRef(new FaceTracker());
   const [streamActive, setStreamActive] = useState(false);
   const [permissionError, setPermissionError] = useState(null);
-  const [proctorStatus, setProctorStatus] = useState('NORMAL'); // 'NORMAL' | 'WARNING' | 'ALERT'
-  const [statusMessage, setStatusMessage] = useState('Webcam feed active & verified');
+  const [minimized, setMinimized] = useState(false);
+  const [showGraph, setShowGraph] = useState(false);
 
-  // Cooldown timers & frame counters to prevent spamming duplicate events
-  const lastViolationTime = useRef(0);
-  const faceMissingCounter = useRef(0);
-  const lookingAwayCounter = useRef(0);
+  // Real-time states
+  const [telemetry, setTelemetry] = useState({
+    magnitudePct: 0,
+    severity: 'NORMAL',
+    direction: 'CENTER',
+    normX: 0.5,
+    normY: 0.5,
+    yaw: 0,
+    pitch: 0,
+    roll: 0,
+    isFacePresent: true,
+  });
+
+  const [history, setHistory] = useState([]);
+  const [instantWarning, setInstantWarning] = useState(null);
+
   const isAnalyzing = useRef(false);
+  const consecutiveViolations = useRef(0);
 
-  // 1. Initialize Webcam Feed
+  // 1. Initialize camera
   useEffect(() => {
     let mediaStream = null;
-
     async function startCamera() {
       try {
         mediaStream = await navigator.mediaDevices.getUserMedia({
           video: { width: 320, height: 240, frameRate: { ideal: 15 } },
-          audio: false
+          audio: false,
         });
-
         if (videoRef.current) {
           videoRef.current.srcObject = mediaStream;
           videoRef.current.onloadedmetadata = () => {
@@ -37,77 +61,19 @@ export default function WebcamProctoring({ isActive, onViolationDetected, curren
           };
         }
       } catch (err) {
-        console.warn('Webcam access error:', err.message);
-        setPermissionError('Webcam permission required for AI proctoring.');
-        // If webcam permission is denied/unavailable, log initial warning
-        triggerViolation('WEBCAM_DISABLED', 'HIGH', 'Webcam feed was disabled or blocked.');
+        setPermissionError('Camera access required.');
+        triggerViolation('WEBCAM_DISABLED', 'HIGH', 'Camera feed was disabled or blocked.');
       }
     }
-
-    if (isActive) {
-      startCamera();
-    }
-
-    return () => {
-      if (mediaStream) {
-        mediaStream.getTracks().forEach(track => track.stop());
-      }
-    };
+    if (isActive) startCamera();
+    return () => { if (mediaStream) mediaStream.getTracks().forEach(t => t.stop()); };
   }, [isActive]);
 
-  // Helper: Trigger Violation with cooldown check (minimum 4s between violations)
   const triggerViolation = (type, severity, message) => {
-    const now = Date.now();
-    if (now - lastViolationTime.current < 4000) {
-      return; // Suppress duplicate events within 4 seconds
-    }
-    lastViolationTime.current = now;
-
-    setProctorStatus('ALERT');
-    setStatusMessage(message);
-
-    if (onViolationDetected) {
-      onViolationDetected({ type, severity, message });
-    }
-
-    setTimeout(() => {
-      setProctorStatus('NORMAL');
-      setStatusMessage('Webcam feed active & verified');
-    }, 3000);
+    if (onViolationDetected) onViolationDetected({ type, severity, message });
   };
 
-  // 2. Tab Switch & Window Focus Event Monitoring
-  useEffect(() => {
-    if (!isActive) return;
-
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        triggerViolation(
-          'TAB_SWITCH_OR_BLUR',
-          'HIGH',
-          'Tab switch or browser minimize detected!'
-        );
-      }
-    };
-
-    const handleWindowBlur = () => {
-      triggerViolation(
-        'WINDOW_BLUR',
-        'HIGH',
-        'Window lost focus (dev tools or secondary window opened)!'
-      );
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('blur', handleWindowBlur);
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('blur', handleWindowBlur);
-    };
-  }, [isActive]);
-
-  // 3. Real-time Computer Vision Frame Analysis (Canvas Pixel Scanning)
+  // 2. Real-time Frame Analysis Loop (~100ms interval for smooth 10fps tracking)
   useEffect(() => {
     if (!isActive || !streamActive) return;
 
@@ -125,183 +91,221 @@ export default function WebcamProctoring({ isActive, onViolationDetected, curren
           canvas.height = 120;
           ctx.drawImage(video, 0, 0, 160, 120);
 
-          const frameData = ctx.getImageData(0, 0, 160, 120).data;
+          // Process frame with FaceTracker engine
+          const result = trackerRef.current.processFrame(ctx, 160, 120);
 
-          // Simple luminance & skin-tone bounding box heuristic
-          let totalLuminance = 0;
-          let skinPixelCount = 0;
-          let leftQuadrantPixels = 0;
-          let rightQuadrantPixels = 0;
-          let centerQuadrantPixels = 0;
+          setTelemetry({
+            magnitudePct: result.magnitudePct,
+            severity: result.severity,
+            direction: result.direction,
+            normX: result.normX,
+            normY: result.normY,
+            yaw: result.yaw,
+            pitch: result.pitch,
+            roll: result.roll,
+            isFacePresent: result.isFacePresent,
+          });
 
-          for (let i = 0; i < frameData.length; i += 16) { // sample every 4th pixel
-            const r = frameData[i];
-            const g = frameData[i + 1];
-            const b = frameData[i + 2];
+          setHistory([...trackerRef.current.history]);
 
-            const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-            totalLuminance += luminance;
+          // Handle Instant UI Warning
+          if (result.shouldTriggerWarning) {
+            const warningMsg = result.direction !== 'CENTER'
+              ? `Face deviation (${result.direction}). Please look straight at screen.`
+              : `Excessive movement detected (${result.magnitudePct}%).`;
 
-            // Basic skin tone / contrast range detection
-            if (r > 60 && g > 40 && b > 20 && r > g && r > b && (Math.max(r, g, b) - Math.min(r, g, b) > 15)) {
-              skinPixelCount++;
+            setInstantWarning(warningMsg);
+            setTimeout(() => setInstantWarning(null), 3000);
 
-              const pixelIndex = i / 4;
-              const x = pixelIndex % 160;
-
-              if (x < 50) leftQuadrantPixels++;
-              else if (x > 110) rightQuadrantPixels++;
-              else centerQuadrantPixels++;
+            // Log Firebase Metadata Event asynchronously
+            if (sessionId) {
+              assessmentService.recordViolation({
+                sessionId,
+                type: 'FACE_MOVEMENT',
+                severity: result.magnitudePct > 70 ? 'HIGH' : 'MEDIUM',
+                message: warningMsg,
+                metadata: {
+                  direction: result.direction,
+                  magnitude: result.magnitudePct / 100,
+                  yaw: result.yaw,
+                  pitch: result.pitch,
+                  confidence: result.confidence,
+                }
+              });
             }
           }
 
-          const avgLuminance = totalLuminance / (frameData.length / 16);
-
-          // A) Face Absence Check
-          if (skinPixelCount < 40 || avgLuminance < 15) {
-            faceMissingCounter.current += 1;
-            if (faceMissingCounter.current >= 3) {
-              triggerViolation('FACE_NOT_DETECTED', 'HIGH', 'No face detected in webcam feed!');
-              faceMissingCounter.current = 0;
+          // Strict violation check: Only trigger actual session warning if sustained (e.g. 4 consecutive checks)
+          if (result.magnitudePct > 65 || !result.isFacePresent) {
+            consecutiveViolations.current += 1;
+            if (consecutiveViolations.current >= 4) {
+              triggerViolation(
+                result.isFacePresent ? 'FACE_DEVIATION' : 'FACE_NOT_DETECTED',
+                'HIGH',
+                result.isFacePresent ? 'Sustained face deviation from screen.' : 'Face missing from camera view.'
+              );
+              consecutiveViolations.current = 0;
             }
           } else {
-            faceMissingCounter.current = 0;
-          }
-
-          // B) Multiple Faces Check (Excessive skin pixels scattered across entire width)
-          if (skinPixelCount > 450 && (leftQuadrantPixels > 100 && rightQuadrantPixels > 100)) {
-            triggerViolation('MULTIPLE_FACES_DETECTED', 'HIGH', 'Multiple faces detected in candidate frame!');
-          }
-
-          // C) Head Turn / Looking Away Check (Extreme lateral imbalance)
-          if (skinPixelCount > 60) {
-            const sideRatio = Math.abs(leftQuadrantPixels - rightQuadrantPixels) / (centerQuadrantPixels + 1);
-            if (sideRatio > 3.5) {
-              lookingAwayCounter.current += 1;
-              if (lookingAwayCounter.current >= 4) {
-                triggerViolation('LOOKING_AWAY', 'MEDIUM', 'Candidate is looking away from the assessment screen!');
-                lookingAwayCounter.current = 0;
-              }
-            } else {
-              lookingAwayCounter.current = 0;
-            }
+            consecutiveViolations.current = 0;
           }
         }
-      } catch (err) {
-        // Frame analysis fallback
+      } catch (_) {
       } finally {
         isAnalyzing.current = false;
       }
-    }, 1000);
+    }, 120);
 
     return () => clearInterval(intervalId);
-  }, [isActive, streamActive]);
+  }, [isActive, streamActive, sessionId]);
 
   if (!isActive) return null;
 
-  return (
-    <div style={{
-      position: 'fixed',
-      bottom: '24px',
-      right: '24px',
-      zIndex: 9999,
-      width: '220px',
-      background: 'rgba(15, 23, 42, 0.85)',
-      backdropFilter: 'blur(12px)',
-      border: `2px solid ${proctorStatus === 'ALERT' ? 'var(--color-danger, #ef4444)' : 'rgba(59, 130, 246, 0.4)'}`,
-      borderRadius: '16px',
-      padding: '12px',
-      boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.3)',
-      transition: 'all 0.3s ease'
-    }}>
-      {/* Header Status Bar */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <div style={{
-            width: '8px', height: '8px', borderRadius: '50%',
-            background: proctorStatus === 'ALERT' ? '#ef4444' : '#10b981',
-            boxShadow: `0 0 8px ${proctorStatus === 'ALERT' ? '#ef4444' : '#10b981'}`,
-            animation: 'pulse 1.5s infinite'
-          }} />
-          <span style={{ fontSize: '0.72rem', fontWeight: 800, letterSpacing: '0.5px', color: '#f8fafc' }}>
-            AI PROCTOR
-          </span>
-        </div>
-        <span style={{
-          fontSize: '0.7rem',
-          fontWeight: 700,
-          padding: '2px 6px',
-          borderRadius: '10px',
-          background: currentViolations > 0 ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.2)',
-          color: currentViolations > 0 ? '#ef4444' : '#10b981',
-          border: `1px solid ${currentViolations > 0 ? 'rgba(239, 68, 68, 0.4)' : 'rgba(16, 185, 129, 0.4)'}`
-        }}>
-          Violations: {currentViolations}/{maxViolations}
-        </span>
-      </div>
+  const isAlert = !!instantWarning || telemetry.magnitudePct > 45;
+  const reticleX = (telemetry.normX * 100).toFixed(1);
+  const reticleY = (telemetry.normY * 100).toFixed(1);
 
-      {/* Video Stream Container */}
-      <div style={{
-        position: 'relative',
-        width: '100%',
-        height: '130px',
-        borderRadius: '10px',
-        overflow: 'hidden',
-        background: '#020617',
-        border: '1px solid rgba(255, 255, 255, 0.1)'
-      }}>
-        {permissionError ? (
-          <div style={{
-            display: 'flex', flexDirection: 'column', alignItems: 'center',
-            justifyContent: 'center', height: '100%', padding: '8px', textAlign: 'center',
-            color: '#ef4444', fontSize: '0.72rem', fontWeight: 600
-          }}>
-            <span>📷</span>
-            <span>{permissionError}</span>
-          </div>
-        ) : (
-          <>
-            <video
-              ref={videoRef}
-              muted
-              playsInline
-              style={{
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover',
-                transform: 'scaleX(-1)' // mirror video feed
-              }}
-            />
-            {/* Target Reticle / Face Box Overlay */}
+  return (
+    <>
+      {/* Instant Warning Banner Toast */}
+      {instantWarning && (
+        <div style={{
+          position: 'fixed', top: 72, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 10000, background: '#ffffff', color: '#92400e',
+          border: '1.5px solid rgba(217,119,6,0.4)', borderRadius: 999,
+          padding: '10px 20px', boxShadow: '0 8px 24px rgba(217,119,6,0.25)',
+          display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.855rem', fontWeight: 700,
+          animation: 'toastIn 0.2s ease',
+        }}>
+          <AlertTriangle size={16} color="#d97706" />
+          <span>⚠ {instantWarning}</span>
+        </div>
+      )}
+
+      {/* Main Camera Widget */}
+      <div
+        className={`camera-widget ${minimized ? 'minimized' : ''}`}
+        style={{ width: minimized ? 120 : 210 }}
+      >
+        {/* Widget Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <div style={{
-              position: 'absolute',
-              top: '50%', left: '50%',
-              transform: 'translate(-50%, -50%)',
-              width: '65%', height: '75%',
-              border: `2px dashed ${proctorStatus === 'ALERT' ? '#ef4444' : 'rgba(59, 130, 246, 0.6)'}`,
-              borderRadius: '50%',
-              pointerEvents: 'none',
-              transition: 'border-color 0.2s'
+              width: 7, height: 7, borderRadius: '50%',
+              background: isAlert ? '#d97706' : '#22c55e',
+              animation: 'pulse 1.5s ease infinite',
             }} />
+            <span style={{ fontSize: '0.65rem', fontWeight: 800, color: '#e2e8f0', letterSpacing: '0.05em' }}>
+              {isAlert ? 'MOVEMENT' : 'PROCTORING'}
+            </span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button
+              onClick={() => setShowGraph(g => !g)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: showGraph ? '#60a5fa' : '#64748b', display: 'flex' }}
+              title="Toggle Live Movement Graph"
+            >
+              <Activity size={12} />
+            </button>
+            <button
+              onClick={() => setMinimized(m => !m)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', display: 'flex' }}
+              aria-label={minimized ? 'Expand' : 'Minimize'}
+            >
+              {minimized ? <Maximize2 size={11} /> : <Minimize2 size={11} />}
+            </button>
+          </div>
+        </div>
+
+        {/* Video feed & Reticle Guide */}
+        {!minimized && (
+          <>
+            <div className={`camera-feed ${isAlert ? 'alert' : ''}`}>
+              {permissionError ? (
+                <div style={{
+                  display: 'flex', flexDirection: 'column', alignItems: 'center',
+                  justifyContent: 'center', height: 120, gap: 6, padding: 12, textAlign: 'center',
+                }}>
+                  <Camera size={18} color="#ef4444" />
+                  <span style={{ fontSize: '0.65rem', color: '#fca5a5', fontWeight: 600 }}>
+                    Camera required
+                  </span>
+                </div>
+              ) : (
+                <>
+                  <video
+                    ref={videoRef}
+                    muted
+                    playsInline
+                    style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)' }}
+                  />
+
+                  {/* Face Center Target Guide */}
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: `${reticleY}%`,
+                      left: `${reticleX}%`,
+                      transform: 'translate(-50%, -50%)',
+                      width: '45%',
+                      height: '60%',
+                      border: `1.5px ${isAlert ? 'solid #d97706' : 'dashed rgba(59,130,246,0.6)'}`,
+                      borderRadius: '50%',
+                      pointerEvents: 'none',
+                      transition: 'all 0.12s ease-out',
+                      boxShadow: isAlert ? '0 0 12px rgba(217,119,6,0.4)' : 'none',
+                    }}
+                  />
+                  {/* Ideal center crosshair */}
+                  <div style={{
+                    position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+                    width: 6, height: 6, borderRadius: '50%', background: 'rgba(255,255,255,0.4)', pointerEvents: 'none',
+                  }} />
+                </>
+              )}
+              <canvas ref={canvasRef} style={{ display: 'none' }} />
+            </div>
+
+            {/* Real-Time Live Status Bar */}
+            <div style={{ marginTop: 8 }}>
+              {/* Position indicator */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <span style={{ fontSize: '0.65rem', color: '#94a3b8', fontWeight: 600 }}>Face Position</span>
+                <span style={{
+                  fontSize: '0.65rem', fontWeight: 700,
+                  color: telemetry.direction === 'CENTER' ? '#4ade80' : '#f59e0b',
+                }}>
+                  {telemetry.direction === 'CENTER' ? '● Centered' : `⚠ Move ${telemetry.direction}`}
+                </span>
+              </div>
+
+              {/* Movement magnitude bar */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ flex: 1, height: 5, background: 'rgba(255,255,255,0.1)', borderRadius: 99, overflow: 'hidden' }}>
+                  <div style={{
+                    height: '100%', borderRadius: 99,
+                    width: `${telemetry.magnitudePct}%`,
+                    background: telemetry.magnitudePct > 70 ? '#ef4444' : telemetry.magnitudePct > 40 ? '#f59e0b' : '#3b82f6',
+                    transition: 'width 0.15s ease-out',
+                  }} />
+                </div>
+                <span style={{ fontSize: '0.65rem', fontWeight: 800, color: '#f1f5f9', minWidth: 28, textAlign: 'right' }}>
+                  {telemetry.magnitudePct}%
+                </span>
+              </div>
+            </div>
           </>
         )}
-        <canvas ref={canvasRef} style={{ display: 'none' }} />
       </div>
 
-      {/* Status Message Footer */}
-      <div style={{
-        marginTop: '8px',
-        fontSize: '0.68rem',
-        color: proctorStatus === 'ALERT' ? '#fca5a5' : '#94a3b8',
-        fontWeight: 600,
-        lineHeight: 1.3,
-        textAlign: 'center',
-        whiteSpace: 'nowrap',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis'
-      }}>
-        {statusMessage}
-      </div>
-    </div>
+      {/* Embedded / Expandable Live Graph */}
+      {showGraph && (
+        <div style={{
+          position: 'fixed', bottom: 20, right: 240, zIndex: 998, width: 440,
+        }}>
+          <FaceMovementGraph history={history} threshold={45} />
+        </div>
+      )}
+    </>
   );
 }
