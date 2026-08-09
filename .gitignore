@@ -1,0 +1,23 @@
+# Dependency directories
+node_modules/
+client/node_modules/
+
+# Environment files
+.env
+client/.env
+
+# SQLite local database
+database.sqlite
+database.sqlite-journal
+
+# Production builds
+dist/
+client/dist/
+
+# Netlify folder
+.netlify/
+client/.netlify/
+
+# OS files
+.DS_Store
+Thumbs.db
