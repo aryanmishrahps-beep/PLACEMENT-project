@@ -55,12 +55,56 @@ export default function CoursesPage() {
           <div key={m.id} className={`course-card animate-delay-${(i % 4) + 1}`}
             onClick={() => navigate(`/student/courses/${m.id}`)}>
             <div className="course-card-header"
-              style={{ background: `linear-gradient(135deg, ${m.color}33 0%, ${m.color}11 100%)` }}>
-              <span style={{ fontSize: '3.5rem', filter: `drop-shadow(0 4px 16px ${m.color}99)` }}>{m.icon}</span>
+              style={{
+                position: 'relative',
+                height: 140,
+                overflow: 'hidden',
+                borderRadius: 'var(--radius-md) var(--radius-md) 0 0',
+                background: '#0f172a',
+              }}>
+              <img
+                src={m.image}
+                alt={m.label}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                  opacity: 0.75,
+                  transition: 'transform 0.4s ease, opacity 0.3s ease',
+                }}
+                className="course-cover-img"
+              />
+              <div style={{
+                position: 'absolute',
+                inset: 0,
+                background: `linear-gradient(180deg, rgba(15,23,42,0.2) 0%, rgba(15,23,42,0.85) 100%)`,
+              }} />
+              
+              {/* Category Badge */}
               <span className={`badge badge-${m.category === 'technical' ? 'primary' : m.category === 'professional' ? 'accent' : 'warning'}`}
-                style={{ position: 'absolute', top: 10, right: 10 }}>
+                style={{ position: 'absolute', top: 12, right: 12, backdropFilter: 'blur(4px)', boxShadow: '0 2px 8px rgba(0,0,0,0.3)' }}>
                 {m.category}
               </span>
+
+              {/* Floating Icon Pill */}
+              <div style={{
+                position: 'absolute',
+                bottom: 12,
+                left: 12,
+                width: 40,
+                height: 40,
+                borderRadius: '10px',
+                background: 'rgba(255,255,255,0.2)',
+                backdropFilter: 'blur(8px)',
+                border: '1px solid rgba(255,255,255,0.3)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '1.4rem',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+              }}>
+                {m.icon}
+              </div>
             </div>
             <div className="course-card-body">
               <div className="course-card-title">{m.label}</div>

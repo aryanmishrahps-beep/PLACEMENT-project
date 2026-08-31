@@ -1,17 +1,17 @@
 // Static seed data for demo mode (no backend needed)
 export const MODULES = [
-  { id: 'dsa', label: 'Data Structures & Algorithms', icon: '🧮', category: 'technical', color: '#6366f1', desc: 'Arrays, Trees, Graphs, DP, Sorting & Searching' },
-  { id: 'dbms', label: 'Database Management Systems', icon: '🗄️', category: 'technical', color: '#8b5cf6', desc: 'SQL, Normalization, Transactions, Indexing' },
-  { id: 'os', label: 'Operating Systems', icon: '⚙️', category: 'technical', color: '#a855f7', desc: 'Processes, Memory Management, Scheduling' },
-  { id: 'cn', label: 'Computer Networks', icon: '🌐', category: 'technical', color: '#06b6d4', desc: 'OSI Model, TCP/IP, HTTP, DNS, Security' },
-  { id: 'oop', label: 'Object-Oriented Programming', icon: '🏗️', category: 'technical', color: '#3b82f6', desc: 'SOLID Principles, Design Patterns, Inheritance' },
-  { id: 'aptitude', label: 'Aptitude & Reasoning', icon: '🧠', category: 'professional', color: '#f59e0b', desc: 'Quantitative, Logical & Verbal Reasoning' },
-  { id: 'interview', label: 'Interview Preparation', icon: '🎤', category: 'professional', color: '#10b981', desc: 'HR Rounds, STAR Method, Mock Interviews' },
-  { id: 'company_track', label: 'Company-Specific Tracks', icon: '🏢', category: 'professional', color: '#ef4444', desc: 'TCS, Infosys, Wipro, Amazon, Google' },
-  { id: 'fullstack', label: 'Full Stack Web Dev', icon: '💻', category: 'project', color: '#6366f1', desc: 'React, Node.js, Databases, REST APIs' },
-  { id: 'ai_ml', label: 'AI & Machine Learning', icon: '🤖', category: 'project', color: '#8b5cf6', desc: 'Python, Scikit-learn, TensorFlow, Deep Learning' },
-  { id: 'cloud', label: 'Cloud & Cyber Security', icon: '☁️', category: 'project', color: '#06b6d4', desc: 'AWS, GCP, Docker, Security Fundamentals' },
-  { id: 'mobile', label: 'Mobile & IoT', icon: '📱', category: 'project', color: '#10b981', desc: 'React Native, Flutter, IoT Protocols' },
+  { id: 'dsa', label: 'Data Structures & Algorithms', icon: '🧮', image: 'https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&w=600&q=80', category: 'technical', color: '#6366f1', desc: 'Arrays, Trees, Graphs, DP, Sorting & Searching' },
+  { id: 'dbms', label: 'Database Management Systems', icon: '🗄️', image: 'https://images.unsplash.com/photo-1544383835-bda2bc66a55d?auto=format&fit=crop&w=600&q=80', category: 'technical', color: '#8b5cf6', desc: 'SQL, Normalization, Transactions, Indexing' },
+  { id: 'os', label: 'Operating Systems', icon: '⚙️', image: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=600&q=80', category: 'technical', color: '#a855f7', desc: 'Processes, Memory Management, Scheduling' },
+  { id: 'cn', label: 'Computer Networks', icon: '🌐', image: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=600&q=80', category: 'technical', color: '#06b6d4', desc: 'OSI Model, TCP/IP, HTTP, DNS, Security' },
+  { id: 'oop', label: 'Object-Oriented Programming', icon: '🏗️', image: 'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?auto=format&fit=crop&w=600&q=80', category: 'technical', color: '#3b82f6', desc: 'SOLID Principles, Design Patterns, Inheritance' },
+  { id: 'aptitude', label: 'Aptitude & Reasoning', icon: '🧠', image: 'https://images.unsplash.com/photo-1606326608606-aa0b62935f2b?auto=format&fit=crop&w=600&q=80', category: 'professional', color: '#f59e0b', desc: 'Quantitative, Logical & Verbal Reasoning' },
+  { id: 'interview', label: 'Interview Preparation', icon: '🎤', image: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=600&q=80', category: 'professional', color: '#10b981', desc: 'HR Rounds, STAR Method, Mock Interviews' },
+  { id: 'company_track', label: 'Company-Specific Tracks', icon: '🏢', image: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=600&q=80', category: 'professional', color: '#ef4444', desc: 'TCS, Infosys, Wipro, Amazon, Google' },
+  { id: 'fullstack', label: 'Full Stack Web Dev', icon: '💻', image: 'https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=600&q=80', category: 'project', color: '#6366f1', desc: 'React, Node.js, Databases, REST APIs' },
+  { id: 'ai_ml', label: 'AI & Machine Learning', icon: '🤖', image: 'https://images.unsplash.com/photo-1677442136019-21780efad99a?auto=format&fit=crop&w=600&q=80', category: 'project', color: '#8b5cf6', desc: 'Python, Scikit-learn, TensorFlow, Deep Learning' },
+  { id: 'cloud', label: 'Cloud & Cyber Security', icon: '☁️', image: 'https://images.unsplash.com/photo-1563986768609-322da13575f3?auto=format&fit=crop&w=600&q=80', category: 'project', color: '#06b6d4', desc: 'AWS, GCP, Docker, Security Fundamentals' },
+  { id: 'mobile', label: 'Mobile & IoT', icon: '📱', image: 'https://images.unsplash.com/photo-1512941937669-90a1b58e7e9c?auto=format&fit=crop&w=600&q=80', category: 'project', color: '#10b981', desc: 'React Native, Flutter, IoT Protocols' },
 ];
 
 export const COMPANY_TRACKS = [
