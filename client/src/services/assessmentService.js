@@ -22,7 +22,11 @@ export const assessmentService = {
       if (db) {
         try {
           const docRef = doc(db, 'assessmentSessions', sessionId);
-          const snap = await getDoc(docRef);
+          // 1.5 second timeout race to prevent hanging
+          const fetchPromise = getDoc(docRef);
+          const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Firestore timeout')), 1500));
+          const snap = await Promise.race([fetchPromise, timeoutPromise]);
+          
           if (snap.exists()) {
             return { id: snap.id, ...snap.data() };
           } else {
@@ -42,11 +46,11 @@ export const assessmentService = {
               score: null,
               answers: {}
             };
-            await setDoc(docRef, initialData);
+            await setDoc(docRef, initialData).catch(() => {});
             return { id: sessionId, ...initialData };
           }
         } catch (fsErr) {
-          console.warn('Direct Firestore initialization notice:', fsErr.message);
+          console.warn('Direct Firestore initialization notice (using local fallback):', fsErr.message);
         }
       }
       // Local fallback
@@ -111,6 +115,16 @@ export const assessmentService = {
                 message: message || 'Proctoring violation recorded.',
                 violationNumber: newCount
               });
+              
+              if (isCancelled) {
+                 await addDoc(violCol, {
+                    type: 'EXAM_CANCELLED',
+                    timestamp: now,
+                    severity: 'CRITICAL',
+                    message: 'Exam terminated due to max violations.',
+                    violationNumber: newCount
+                 });
+              }
             } catch (e) { /* ignore subcollection permission fallback */ }
 
             return { ...data, ...updates };
@@ -174,7 +188,7 @@ export const assessmentService = {
         const eventsCol = collection(db, 'assessmentSessions', sessionId, 'proctoringEvents');
         await addDoc(eventsCol, {
           eventType: event.eventType || 'FACE_MOVEMENT',
-          direction: event.direction,
+          direction: event.direction || 'NONE',
           timestamp: event.timestamp || new Date().toISOString(),
           peakDeviation: event.peakDeviation || 0,
           duration: event.duration || 0,

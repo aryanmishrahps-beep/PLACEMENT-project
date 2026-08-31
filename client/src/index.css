@@ -1341,14 +1341,15 @@ img { max-width: 100%; }
   position: fixed;
   bottom: 70px;
   right: 20px;
-  z-index: 999;
-  width: 200px;
+  z-index: 9999;
+  width: 210px;
   background: #0c1220;
   border-radius: 14px;
   padding: 10px;
-  border: 1px solid rgba(255,255,255,0.1);
-  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  border: 1px solid rgba(255,255,255,0.15);
+  box-shadow: 0 8px 40px rgba(0,0,0,0.7);
   transition: all var(--transition-base);
+  isolation: isolate;
 }
 
 .camera-widget.minimized {

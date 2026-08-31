@@ -4,7 +4,7 @@ import { assessmentService } from '../../services/assessmentService';
 import { useAuth } from '../../context/AuthContext';
 import { Shield, Clock, ChevronLeft, ChevronRight, CheckCircle, AlertTriangle, X } from 'lucide-react';
 
-const QUIZ_TIME = 10 * 60; // 10 minutes
+const QUIZ_TIME = 60 * 60; // 60 minutes
 
 /* ── Timer ─────────────────────────────────────────────── */
 function QuizTimer({ seconds, onExpire }) {
@@ -71,20 +71,36 @@ function SubmitModal({ answered, total, onConfirm, onCancel }) {
   );
 }
 
-/* ── Proctoring Warning Toast ───────────────────────────── */
-function ProctoringToast({ message, onDismiss }) {
-  useEffect(() => {
-    const t = setTimeout(onDismiss, 4500);
-    return () => clearTimeout(t);
-  }, []);
+/* ── Proctoring Warning Modal ───────────────────────────── */
+function ProctoringModal({ warningNumber, onDismiss }) {
+  let title = `⚠ WARNING ${warningNumber}/3`;
+  let message = '';
+  
+  if (warningNumber === 1) {
+    message = 'Unusual face movement detected.\nPlease face the camera.';
+  } else if (warningNumber === 2) {
+    message = 'Second warning.\nPlease remain facing the camera.';
+  } else if (warningNumber >= 3) {
+    title = `⚠ WARNING 3/3`;
+    message = 'Final warning.\nFurther proctoring violations may cancel the examination.';
+  }
 
   return (
-    <div className="toast-container">
-      <div className="toast toast-warning" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <AlertTriangle size={15} color="#d97706" />
-        <span>Proctoring Alert: {message}</span>
-        <button onClick={onDismiss} style={{ background: 'none', border: 'none', cursor: 'pointer', marginLeft: 4 }}>
-          <X size={13} color="#92400e" />
+    <div className="modal-overlay">
+      <div className="modal" style={{ maxWidth: 420, textAlign: 'center' }}>
+        <div style={{
+          width: 54, height: 54, borderRadius: '50%',
+          background: 'rgba(217,119,6,0.1)', border: '1px solid rgba(217,119,6,0.3)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px',
+        }}>
+          <AlertTriangle size={26} color="var(--color-warning)" />
+        </div>
+        <h2 className="modal-title" style={{ color: 'var(--color-warning)', fontSize: '1.25rem', fontWeight: 800 }}>{title}</h2>
+        <div className="modal-body" style={{ whiteSpace: 'pre-line', margin: '16px 0 24px', fontSize: '1.05rem', color: 'var(--text-primary)', lineHeight: 1.5 }}>
+          {message}
+        </div>
+        <button className="btn btn-primary w-full" style={{ justifyContent: 'center', fontSize: '1rem', padding: '10px 0' }} onClick={onDismiss}>
+          OK
         </button>
       </div>
     </div>
@@ -94,13 +110,19 @@ function ProctoringToast({ message, onDismiss }) {
 /* ── Main ProctoredMCQQuiz ──────────────────────────────── */
 export default function ProctoredMCQQuiz({ quiz, onFinish }) {
   const { user } = useAuth();
-  const [session, setSession] = useState(null);
+  const [session, setSession] = useState(() => ({
+    id: `${user?.id || user?.uid || 'student_demo_1'}_${quiz.id || 'dsa_mcq'}`,
+    status: 'active',
+    violationCount: 0,
+    maxViolations: 3,
+    answers: {}
+  }));
   const [currentQ, setCurrentQ] = useState(0);
   const [answers, setAnswers] = useState({});
   const [timeLeft, setTimeLeft] = useState(QUIZ_TIME);
   const [submitted, setSubmitted] = useState(false);
   const [result, setResult] = useState(null);
-  const [warningToast, setWarningToast] = useState(null);
+  const [activeWarningNumber, setActiveWarningNumber] = useState(null);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const timerRef = useRef(null);
 
@@ -154,9 +176,30 @@ export default function ProctoredMCQQuiz({ quiz, onFinish }) {
 
   const handleViolationDetected = async ({ type, severity, message }) => {
     if (!session || session.status !== 'active') return;
-    setWarningToast({ type, message });
-    const updated = await assessmentService.recordViolation({ sessionId: session.id, type, severity, message });
-    if (updated) setSession(updated);
+    
+    // Always increment local state immediately so UI increments 1 -> 2 -> 3 -> 4 instantly
+    setSession(prev => {
+      const currentCount = prev?.violationCount || 0;
+      const nextCount = currentCount + 1;
+      const isCancelled = nextCount >= 4;
+      
+      if (nextCount <= 3) {
+        setActiveWarningNumber(nextCount);
+      } else {
+        setActiveWarningNumber(null);
+      }
+
+      return {
+        ...prev,
+        violationCount: nextCount,
+        status: isCancelled ? 'cancelled' : prev?.status || 'active',
+        cancelledAt: isCancelled ? new Date().toISOString() : prev?.cancelledAt,
+        cancellationReason: isCancelled ? `Four proctoring warnings recorded (${message || type})` : prev?.cancellationReason,
+      };
+    });
+
+    // Record asynchronously to backend/Firestore
+    await assessmentService.recordViolation({ sessionId: session.id, type, severity, message }).catch(() => {});
   };
 
   const handleSubmit = async () => {
@@ -188,10 +231,11 @@ export default function ProctoredMCQQuiz({ quiz, onFinish }) {
             <AlertTriangle size={28} color="var(--color-danger)" />
           </div>
           <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: 8, letterSpacing: '-0.02em' }}>
-            Assessment Terminated
+            EXAM CANCELLED
           </h1>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: 24 }}>
-            This assessment has been terminated because the permitted proctoring violation limit was exceeded.
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: 24, whiteSpace: 'pre-line' }}>
+            Four proctoring warnings have been recorded.{'\n\n'}
+            Your examination has been cancelled.
           </p>
 
           <div style={{
@@ -325,10 +369,23 @@ export default function ProctoredMCQQuiz({ quiz, onFinish }) {
   const answered = Object.keys(answers).length;
 
   return (
+    <>
+      {/* Webcam Proctoring Widget — outside shell to avoid CSS stacking context issues */}
+      <WebcamProctoring
+        isActive={session?.status === 'active'}
+        sessionId={session?.id}
+        onViolationDetected={handleViolationDetected}
+        currentViolations={session?.violationCount || 0}
+        maxViolations={session?.maxViolations || 3}
+      />
+
     <div className="assessment-shell">
-      {/* Proctoring warning toast */}
-      {warningToast && (
-        <ProctoringToast message={warningToast.message} onDismiss={() => setWarningToast(null)} />
+      {/* Proctoring warning modal */}
+      {activeWarningNumber && (
+        <ProctoringModal 
+          warningNumber={activeWarningNumber} 
+          onDismiss={() => setActiveWarningNumber(null)} 
+        />
       )}
 
       {/* Submit confirmation modal */}
@@ -340,14 +397,6 @@ export default function ProctoredMCQQuiz({ quiz, onFinish }) {
           onCancel={() => setShowSubmitModal(false)}
         />
       )}
-
-      {/* Webcam Proctoring Widget */}
-      <WebcamProctoring
-        isActive={session?.status === 'active'}
-        onViolationDetected={handleViolationDetected}
-        currentViolations={session?.violationCount || 0}
-        maxViolations={session?.maxViolations || 3}
-      />
 
       {/* ── Header ── */}
       <div className="assessment-header">
@@ -518,5 +567,6 @@ export default function ProctoredMCQQuiz({ quiz, onFinish }) {
 
       <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}`}</style>
     </div>
+    </>
   );
 }
