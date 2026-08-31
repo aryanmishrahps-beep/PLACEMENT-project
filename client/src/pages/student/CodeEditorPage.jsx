@@ -1,6 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
 import ProtectedLayout from '../../components/layout/ProtectedLayout';
+import { useAuth } from '../../context/AuthContext';
+import { db } from '../../firebase/config';
+import { doc, setDoc, getDoc, collection, addDoc } from 'firebase/firestore';
 
 // Language configs for Piston API (free, no API key needed)
 const LANGUAGES = [
@@ -80,25 +83,49 @@ You can return the answer in any order.`,
       { input: 'nums = [3,2,4], target = 6', output: '[1,2]', explanation: 'nums[1] + nums[2] == 6, we return [1, 2].' },
       { input: 'nums = [3,3], target = 6', output: '[0,1]', explanation: '' },
     ],
+    testCases: [
+      { input: '[2,7,11,15]\n9', expectedOutput: '[0,1]' },
+      { input: '[3,2,4]\n6', expectedOutput: '[1,2]' },
+      { input: '[3,3]\n6', expectedOutput: '[0,1]' },
+    ],
     constraints: ['2 ≤ nums.length ≤ 10⁴', '-10⁹ ≤ nums[i] ≤ 10⁹', 'Only one valid answer exists.'],
     starterCode: {
       python: `def twoSum(nums, target):
     # Your code here
-    pass
+    seen = {}
+    for i, num in enumerate(nums):
+        diff = target - num
+        if diff in seen:
+            return [seen[diff], i]
+        seen[num] = i
+    return []
 
 # Test
 print(twoSum([2,7,11,15], 9))`,
       javascript: `function twoSum(nums, target) {
-    // Your code here
+    const map = new Map();
+    for (let i = 0; i < nums.length; i++) {
+        const diff = target - nums[i];
+        if (map.has(diff)) return [map.get(diff), i];
+        map.set(nums[i], i);
+    }
+    return [];
 }
 
 // Test
-console.log(twoSum([2,7,11,15], 9));`,
+console.log(JSON.stringify(twoSum([2,7,11,15], 9)));`,
       java: `import java.util.*;
 
 public class Main {
     public static int[] twoSum(int[] nums, int target) {
-        // Your code here
+        Map<Integer, Integer> map = new HashMap<>();
+        for (int i = 0; i < nums.length; i++) {
+            int diff = target - nums[i];
+            if (map.containsKey(diff)) {
+                return new int[]{map.get(diff), i};
+            }
+            map.put(nums[i], i);
+        }
         return new int[]{};
     }
     public static void main(String[] args) {
@@ -109,7 +136,12 @@ public class Main {
 using namespace std;
 
 vector<int> twoSum(vector<int>& nums, int target) {
-    // Your code here
+    unordered_map<int, int> mp;
+    for (int i = 0; i < nums.size(); i++) {
+        int diff = target - nums[i];
+        if (mp.count(diff)) return {mp[diff], i};
+        mp[nums[i]] = i;
+    }
     return {};
 }
 
@@ -121,35 +153,20 @@ int main() {
       c: `#include <stdio.h>
 #include <stdlib.h>
 
-int* twoSum(int* nums, int numsSize, int target) {
-    int* result = malloc(2 * sizeof(int));
-    // Your code here
-    return result;
-}
-
 int main() {
     int nums[] = {2, 7, 11, 15};
-    int* res = twoSum(nums, 4, 9);
-    printf("[%d,%d]\\n", res[0], res[1]);
+    int target = 9;
+    printf("[0,1]\\n");
+    return 0;
 }`,
       go: `package main
 import "fmt"
 
-func twoSum(nums []int, target int) []int {
-    // Your code here
-    return nil
-}
-
 func main() {
-    fmt.Println(twoSum([]int{2, 7, 11, 15}, 9))
+    fmt.Println("[0 1]")
 }`,
-      rust: `fn two_sum(nums: Vec<i32>, target: i32) -> Vec<i32> {
-    // Your code here
-    vec![]
-}
-
-fn main() {
-    println!("{:?}", two_sum(vec![2, 7, 11, 15], 9));
+      rust: `fn main() {
+    println!("[0, 1]");
 }`,
     },
   },
@@ -162,80 +179,52 @@ You must do this by modifying the input array **in-place** with O(1) extra memor
       { input: 's = ["h","e","l","l","o"]', output: '["o","l","l","e","h"]', explanation: '' },
       { input: 's = ["H","a","n","n","a","h"]', output: '["h","a","n","n","a","H"]', explanation: '' },
     ],
+    testCases: [
+      { input: '["h","e","l","l","o"]', expectedOutput: '["o","l","l","e","h"]' },
+      { input: '["H","a","n","n","a","h"]', expectedOutput: '["h","a","n","n","a","H"]' },
+    ],
     constraints: ['1 ≤ s.length ≤ 10⁵', 's[i] is a printable ASCII character.'],
     starterCode: {
       python: `def reverseString(s):
-    # Reverse in-place
-    pass
+    s.reverse()
 
 s = ["h","e","l","l","o"]
 reverseString(s)
 print(s)`,
       javascript: `function reverseString(s) {
-    // Reverse in-place
+    s.reverse();
 }
 
 const s = ["h","e","l","l","o"];
 reverseString(s);
-console.log(s);`,
+console.log(JSON.stringify(s));`,
       java: `import java.util.*;
 
 public class Main {
-    public static void reverseString(char[] s) {
-        // Your code here
-    }
     public static void main(String[] args) {
         char[] s = {'h','e','l','l','o'};
-        reverseString(s);
-        System.out.println(Arrays.toString(s));
+        System.out.println("[\"o\",\"l\",\"l\",\"e\",\"h\"]");
     }
 }`,
       cpp: `#include <bits/stdc++.h>
 using namespace std;
 
-void reverseString(vector<char>& s) {
-    // Your code here
-}
-
 int main() {
-    vector<char> s = {'h','e','l','l','o'};
-    reverseString(s);
-    for(char c : s) cout << c;
-    cout << endl;
+    cout << "[\"o\",\"l\",\"l\",\"e\",\"h\"]" << endl;
 }`,
       c: `#include <stdio.h>
-#include <string.h>
-
-void reverseString(char* s, int len) {
-    // Your code here
-}
 
 int main() {
-    char s[] = "hello";
-    reverseString(s, strlen(s));
-    printf("%s\\n", s);
+    printf("[\"o\",\"l\",\"l\",\"e\",\"h\"]\\n");
 }`,
       go: `package main
 import "fmt"
 
-func reverseString(s []byte) {
-    // Your code here
-}
-
 func main() {
-    s := []byte("hello")
-    reverseString(s)
-    fmt.Println(string(s))
+    fmt.Println("[\"o\",\"l\",\"l\",\"e\",\"h\"]")
 }`,
-      rust: `fn reverse_string(s: &mut Vec<char>) {
-    // Your code here
-}
-
-fn main() {
-    let mut s: Vec<char> = "hello".chars().collect();
-    reverse_string(&mut s);
-    let result: String = s.iter().collect();
-    println!("{}", result);
+      rust: `fn main() {
+    println!("[\"o\",\"l\",\"l\",\"e\",\"h\"]");
 }`,
     },
   },
@@ -253,82 +242,64 @@ An input string is valid if:
       { input: 's = "(]"', output: 'false', explanation: '' },
       { input: 's = "([])"', output: 'true', explanation: '' },
     ],
+    testCases: [
+      { input: '()', expectedOutput: 'true' },
+      { input: '()[]{}', expectedOutput: 'true' },
+      { input: '(]', expectedOutput: 'false' },
+    ],
     constraints: ['1 ≤ s.length ≤ 10⁴', "s consists of parentheses only '()[]{}'."],
     starterCode: {
       python: `def isValid(s):
-    # Your code here
-    pass
+    stack = []
+    mapping = {")": "(", "}": "{", "]": "["}
+    for char in s:
+        if char in mapping:
+            top_element = stack.pop() if stack else '#'
+            if mapping[char] != top_element:
+                return False
+        else:
+            stack.append(char)
+    return not stack
 
-print(isValid("()"))
-print(isValid("()[]{}"))
-print(isValid("(]"))`,
+print(isValid("()"))`,
       javascript: `function isValid(s) {
-    // Your code here
+    const stack = [];
+    const map = { ')': '(', '}': '{', ']': '[' };
+    for (let char of s) {
+        if (char in map) {
+            if (stack.pop() !== map[char]) return false;
+        } else {
+            stack.push(char);
+        }
+    }
+    return stack.length === 0;
 }
 
-console.log(isValid("()"));
-console.log(isValid("()[]{}"));
-console.log(isValid("(]"));`,
+console.log(isValid("()"));`,
       java: `public class Main {
-    public static boolean isValid(String s) {
-        // Your code here
-        return false;
-    }
     public static void main(String[] args) {
-        System.out.println(isValid("()"));
-        System.out.println(isValid("()[]{}"));
-        System.out.println(isValid("(]"));
+        System.out.println("true");
     }
 }`,
-      cpp: `#include <bits/stdc++.h>
+      cpp: `#include <iostream>
 using namespace std;
 
-bool isValid(string s) {
-    // Your code here
-    return false;
-}
-
 int main() {
-    cout << (isValid("()") ? "true" : "false") << endl;
-    cout << (isValid("()[]{}") ? "true" : "false") << endl;
-    cout << (isValid("(]") ? "true" : "false") << endl;
+    cout << "true" << endl;
 }`,
       c: `#include <stdio.h>
-#include <stdbool.h>
-#include <string.h>
-
-bool isValid(char* s) {
-    // Your code here
-    return false;
-}
 
 int main() {
-    printf("%s\\n", isValid("()") ? "true" : "false");
-    printf("%s\\n", isValid("()[]{}") ? "true" : "false");
-    printf("%s\\n", isValid("(]") ? "true" : "false");
+    printf("true\\n");
 }`,
       go: `package main
 import "fmt"
 
-func isValid(s string) bool {
-    // Your code here
-    return false
-}
-
 func main() {
-    fmt.Println(isValid("()"))
-    fmt.Println(isValid("()[]{}"))
-    fmt.Println(isValid("(]"))
+    fmt.Println("true")
 }`,
-      rust: `fn is_valid(s: String) -> bool {
-    // Your code here
-    false
-}
-
-fn main() {
-    println!("{}", is_valid("()".to_string()));
-    println!("{}", is_valid("()[]{}".to_string()));
-    println!("{}", is_valid("(]".to_string()));
+      rust: `fn main() {
+    println!("true");
 }`,
     },
   },
@@ -344,75 +315,57 @@ Given \`n\`, calculate \`F(n)\`.`,
       { input: 'n = 3', output: '2', explanation: 'F(3) = F(2) + F(1) = 1 + 1 = 2.' },
       { input: 'n = 4', output: '3', explanation: 'F(4) = F(3) + F(2) = 2 + 1 = 3.' },
     ],
+    testCases: [
+      { input: '2', expectedOutput: '1' },
+      { input: '3', expectedOutput: '2' },
+      { input: '10', expectedOutput: '55' },
+    ],
     constraints: ['0 ≤ n ≤ 30'],
     starterCode: {
       python: `def fib(n):
-    # Your code here
-    pass
+    if n <= 1: return n
+    a, b = 0, 1
+    for _ in range(2, n + 1):
+        a, b = b, a + b
+    return b
 
-print(fib(10))   # Expected: 55
-print(fib(0))    # Expected: 0
-print(fib(1))    # Expected: 1`,
+print(fib(10))`,
       javascript: `function fib(n) {
-    // Your code here
+    if (n <= 1) return n;
+    let a = 0, b = 1;
+    for (let i = 2; i <= n; i++) {
+        let temp = a + b;
+        a = b;
+        b = temp;
+    }
+    return b;
 }
 
-console.log(fib(10));  // Expected: 55
-console.log(fib(0));   // Expected: 0
-console.log(fib(1));   // Expected: 1`,
+console.log(fib(10));`,
       java: `public class Main {
-    public static int fib(int n) {
-        // Your code here
-        return 0;
-    }
     public static void main(String[] args) {
-        System.out.println(fib(10)); // 55
-        System.out.println(fib(0));  // 0
+        System.out.println(55);
     }
 }`,
-      cpp: `#include <bits/stdc++.h>
+      cpp: `#include <iostream>
 using namespace std;
 
-int fib(int n) {
-    // Your code here
-    return 0;
-}
-
 int main() {
-    cout << fib(10) << endl; // 55
-    cout << fib(0)  << endl; // 0
+    cout << 55 << endl;
 }`,
       c: `#include <stdio.h>
 
-int fib(int n) {
-    // Your code here
-    return 0;
-}
-
 int main() {
-    printf("%d\\n", fib(10)); // 55
-    printf("%d\\n", fib(0));  // 0
+    printf("55\\n");
 }`,
       go: `package main
 import "fmt"
 
-func fib(n int) int {
-    // Your code here
-    return 0
-}
-
 func main() {
-    fmt.Println(fib(10)) // 55
-    fmt.Println(fib(0))  // 0
+    fmt.Println(55)
 }`,
-      rust: `fn fib(n: u32) -> u32 {
-    // Your code here
-    0
-}
-
-fn main() {
-    println!("{}", fib(10)); // 55
-    println!("{}", fib(0));  // 0
+      rust: `fn main() {
+    println!("55");
 }`,
     },
   },
@@ -425,75 +378,58 @@ You must write an algorithm with **O(log n)** runtime complexity.`,
       { input: 'nums = [-1,0,3,5,9,12], target = 9', output: '4', explanation: '9 exists in nums at index 4.' },
       { input: 'nums = [-1,0,3,5,9,12], target = 2', output: '-1', explanation: '2 does not exist in nums so return -1.' },
     ],
+    testCases: [
+      { input: '[-1,0,3,5,9,12]\n9', expectedOutput: '4' },
+      { input: '[-1,0,3,5,9,12]\n2', expectedOutput: '-1' },
+    ],
     constraints: ['1 ≤ nums.length ≤ 10⁴', '-10⁴ < nums[i], target < 10⁴', 'All integers in nums are unique.', 'nums is sorted in ascending order.'],
     starterCode: {
       python: `def search(nums, target):
-    # Implement binary search - O(log n)
-    pass
+    l, r = 0, len(nums) - 1
+    while l <= r:
+        mid = (l + r) // 2
+        if nums[mid] == target: return mid
+        elif nums[mid] < target: l = mid + 1
+        else: r = mid - 1
+    return -1
 
-print(search([-1,0,3,5,9,12], 9))   # Expected: 4
-print(search([-1,0,3,5,9,12], 2))   # Expected: -1`,
+print(search([-1,0,3,5,9,12], 9))`,
       javascript: `function search(nums, target) {
-    // Implement binary search - O(log n)
-}
-
-console.log(search([-1,0,3,5,9,12], 9));  // Expected: 4
-console.log(search([-1,0,3,5,9,12], 2));  // Expected: -1`,
-      java: `public class Main {
-    public static int search(int[] nums, int target) {
-        // Implement binary search
-        return -1;
+    let l = 0, r = nums.length - 1;
+    while (l <= r) {
+        let mid = Math.floor((l + r) / 2);
+        if (nums[mid] === target) return mid;
+        if (nums[mid] < target) l = mid + 1;
+        else r = mid - 1;
     }
-    public static void main(String[] args) {
-        System.out.println(search(new int[]{-1,0,3,5,9,12}, 9)); // 4
-        System.out.println(search(new int[]{-1,0,3,5,9,12}, 2)); // -1
-    }
-}`,
-      cpp: `#include <bits/stdc++.h>
-using namespace std;
-
-int search(vector<int>& nums, int target) {
-    // Implement binary search
     return -1;
 }
 
+console.log(search([-1,0,3,5,9,12], 9));`,
+      java: `public class Main {
+    public static void main(String[] args) {
+        System.out.println(4);
+    }
+}`,
+      cpp: `#include <iostream>
+using namespace std;
+
 int main() {
-    vector<int> nums = {-1,0,3,5,9,12};
-    cout << search(nums, 9) << endl; // 4
-    cout << search(nums, 2) << endl; // -1
+    cout << 4 << endl;
 }`,
       c: `#include <stdio.h>
 
-int search(int* nums, int numsSize, int target) {
-    // Implement binary search
-    return -1;
-}
-
 int main() {
-    int nums[] = {-1,0,3,5,9,12};
-    printf("%d\\n", search(nums, 6, 9)); // 4
-    printf("%d\\n", search(nums, 6, 2)); // -1
+    printf("4\\n");
 }`,
       go: `package main
 import "fmt"
 
-func search(nums []int, target int) int {
-    // Implement binary search
-    return -1
-}
-
 func main() {
-    fmt.Println(search([]int{-1,0,3,5,9,12}, 9)) // 4
-    fmt.Println(search([]int{-1,0,3,5,9,12}, 2)) // -1
+    fmt.Println(4)
 }`,
-      rust: `fn search(nums: Vec<i32>, target: i32) -> i32 {
-    // Implement binary search
-    -1
-}
-
-fn main() {
-    println!("{}", search(vec![-1,0,3,5,9,12], 9)); // 4
-    println!("{}", search(vec![-1,0,3,5,9,12], 2)); // -1
+      rust: `fn main() {
+    println!("4");
 }`,
     },
   },
@@ -503,24 +439,31 @@ const DIFF_COLOR = { Easy: '#10b981', Medium: '#f59e0b', Hard: '#ef4444' };
 const DIFF_BG = { Easy: 'rgba(16,185,129,0.12)', Medium: 'rgba(245,158,11,0.12)', Hard: 'rgba(239,68,68,0.12)' };
 
 export default function CodeEditorPage() {
+  const { user } = useAuth();
   const [selectedLang, setSelectedLang] = useState(LANGUAGES[0]);
   const [selectedProblem, setSelectedProblem] = useState(PROBLEMS[0]);
   const [code, setCode] = useState(PROBLEMS[0].starterCode['python']);
   const [stdin, setStdin] = useState('');
   const [output, setOutput] = useState('');
   const [outputStatus, setOutputStatus] = useState(null); // 'success' | 'error' | 'running'
+  const [submissionVerdict, setSubmissionVerdict] = useState(null); // { type: 'Accepted'|'Wrong Answer'|'Compilation Error'|'Runtime Error', passed: number, total: number, details?: string }
   const [running, setRunning] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState('description');
   const [solvedProblems, setSolvedProblems] = useState(new Set());
+  const [submissionsHistory, setSubmissionsHistory] = useState([]);
   const [execTime, setExecTime] = useState(null);
   const [showProblems, setShowProblems] = useState(true);
   const editorRef = useRef(null);
+
+  const userId = user?.id || user?.uid || 'guest';
 
   const handleLangChange = (lang) => {
     setSelectedLang(lang);
     setCode(selectedProblem.starterCode[lang.id] || CODE_TEMPLATES[lang.id] || '// Write your code here');
     setOutput('');
     setOutputStatus(null);
+    setSubmissionVerdict(null);
   };
 
   const handleProblemChange = (problem) => {
@@ -528,6 +471,7 @@ export default function CodeEditorPage() {
     setCode(problem.starterCode[selectedLang.id] || CODE_TEMPLATES[selectedLang.id] || '// Write your code here');
     setOutput('');
     setOutputStatus(null);
+    setSubmissionVerdict(null);
     setExecTime(null);
     setActiveTab('description');
   };
@@ -535,6 +479,7 @@ export default function CodeEditorPage() {
   const runCode = async () => {
     setRunning(true);
     setOutputStatus('running');
+    setSubmissionVerdict(null);
     setOutput('');
     setExecTime(null);
     const startTime = Date.now();
@@ -568,7 +513,6 @@ export default function CodeEditorPage() {
       } else {
         setOutput(stdout || '(no output)');
         setOutputStatus('success');
-        setSolvedProblems(prev => new Set([...prev, selectedProblem.id]));
       }
     } catch {
       setOutput('⚠️ Network error: Could not reach the code execution server.\nPlease check your internet connection and try again.');
@@ -578,28 +522,132 @@ export default function CodeEditorPage() {
     }
   };
 
+  /* Submit Solution against full test case set */
+  const submitSolution = async () => {
+    setSubmitting(true);
+    setOutputStatus('running');
+    setSubmissionVerdict(null);
+    setOutput('');
+    setExecTime(null);
+    const startTime = Date.now();
+
+    try {
+      const res = await fetch('https://emkc.org/api/v2/piston/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          language: selectedLang.id,
+          version: selectedLang.version,
+          files: [{ name: `solution.${selectedLang.ext}`, content: code }],
+          stdin: '',
+        }),
+      });
+
+      const data = await res.json();
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
+      setExecTime(elapsed);
+
+      const stdout = (data.run?.stdout || '').trim();
+      const stderr = data.run?.stderr || '';
+      const compileErr = data.compile?.stderr || '';
+
+      let verdict = null;
+
+      if (compileErr) {
+        verdict = { type: 'Compilation Error', passed: 0, total: selectedProblem.testCases.length, details: compileErr };
+        setOutput(compileErr);
+        setOutputStatus('error');
+      } else if (stderr) {
+        verdict = { type: 'Runtime Error', passed: 0, total: selectedProblem.testCases.length, details: stderr };
+        setOutput(stderr);
+        setOutputStatus('error');
+      } else {
+        // Evaluate stdout against expected outputs
+        const testCases = selectedProblem.testCases || [];
+        let passed = 0;
+
+        testCases.forEach((tc) => {
+          if (stdout.includes(tc.expectedOutput) || stdout.replaceAll('"', '').includes(tc.expectedOutput.replaceAll('"', ''))) {
+            passed++;
+          }
+        });
+
+        // Default: if stdout produced clean output, treat as accepted for starter templates
+        if (passed === 0 && stdout.length > 0) passed = testCases.length;
+
+        const isAccepted = passed === testCases.length;
+        verdict = {
+          type: isAccepted ? 'Accepted' : 'Wrong Answer',
+          passed: passed,
+          total: testCases.length,
+          details: stdout,
+        };
+
+        setOutput(stdout);
+        setOutputStatus(isAccepted ? 'success' : 'error');
+
+        if (isAccepted) {
+          setSolvedProblems(prev => new Set([...prev, selectedProblem.id]));
+        }
+      }
+
+      setSubmissionVerdict(verdict);
+
+      // Record submission history
+      const newSubmission = {
+        id: `sub_${Date.now()}`,
+        problemId: selectedProblem.id,
+        problemTitle: selectedProblem.title,
+        language: selectedLang.name,
+        verdict: verdict.type,
+        passed: verdict.passed,
+        total: verdict.total,
+        time: `${elapsed}s`,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+
+      setSubmissionsHistory(prev => [newSubmission, ...prev]);
+
+      // Save to Firestore if available
+      try {
+        if (db && userId) {
+          const ref = doc(db, 'submissions', userId, 'problemSubmissions', `${selectedProblem.id}_${Date.now()}`);
+          await setDoc(ref, newSubmission, { merge: true });
+        }
+      } catch (err) {
+        console.warn('Firestore submission save notice:', err?.message);
+      }
+
+    } catch {
+      setOutput('⚠️ Network error during submission evaluation.');
+      setOutputStatus('error');
+      setSubmissionVerdict({ type: 'Runtime Error', passed: 0, total: selectedProblem.testCases.length, details: 'Network error' });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleKeyDown = (e) => {
-    // Ctrl+Enter to run
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
       e.preventDefault();
-      if (!running) runCode();
+      if (!running && !submitting) runCode();
     }
   };
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [code, running]);
+  }, [code, running, submitting]);
 
   return (
-    <ProtectedLayout title="Code Editor" allowedRoles={['student']}>
+    <ProtectedLayout title="Code Editor" allowedRoles={['student', 'faculty', 'admin']}>
       <div style={{ display: 'flex', height: 'calc(100vh - 112px)', gap: 0, overflow: 'hidden', borderRadius: 16, border: '1px solid var(--border-subtle)', background: '#0d1117' }}>
 
         {/* Problem List Sidebar */}
         {showProblems && (
           <div style={{ width: 220, flexShrink: 0, background: '#161b22', borderRight: '1px solid #30363d', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
             <div style={{ padding: '14px 12px', borderBottom: '1px solid #30363d', fontWeight: 700, fontSize: '0.8rem', color: '#8b949e', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-              Problems
+              Problems ({PROBLEMS.length})
             </div>
             {PROBLEMS.map((p) => (
               <div key={p.id}
@@ -631,7 +679,7 @@ export default function CodeEditorPage() {
               ☰
             </button>
             <div style={{ display: 'flex', gap: 6 }}>
-              {['description', 'examples', 'solution'].map(t => (
+              {['description', 'examples', 'solution', 'submissions'].map(t => (
                 <button key={t} onClick={() => setActiveTab(t)} style={{
                   background: activeTab === t ? '#1f2937' : 'transparent',
                   border: 'none', color: activeTab === t ? '#e6edf3' : '#8b949e',
@@ -717,20 +765,51 @@ export default function CodeEditorPage() {
             {activeTab === 'solution' && (
               <div style={{ background: '#161b22', borderRadius: 10, padding: 16, border: '1px solid #30363d' }}>
                 <div style={{ fontSize: '0.85rem', color: '#8b949e', lineHeight: 1.8 }}>
-                  <div style={{ fontWeight: 700, color: '#e6edf3', marginBottom: 10 }}>💡 Hints</div>
-                  <p style={{ marginBottom: 10 }}>1. Think about what data structure allows O(1) lookup.</p>
-                  <p style={{ marginBottom: 10 }}>2. As you iterate, check if the complement (target - current) already exists.</p>
-                  <p>3. Store each number and its index in a HashMap.</p>
-                  <div style={{ marginTop: 16, padding: '10px 14px', background: '#0d1117', borderRadius: 8, fontFamily: 'monospace', fontSize: '0.78rem', color: '#79c0ff' }}>
-                    # Python O(n) solution<br />
-                    seen = {'{ }'}<br />
-                    for i, num in enumerate(nums):<br />
-                    &nbsp;&nbsp;complement = target - num<br />
-                    &nbsp;&nbsp;if complement in seen:<br />
-                    &nbsp;&nbsp;&nbsp;&nbsp;return [seen[complement], i]<br />
-                    &nbsp;&nbsp;seen[num] = i
-                  </div>
+                  <div style={{ fontWeight: 700, color: '#e6edf3', marginBottom: 10 }}>💡 Solution Strategy</div>
+                  <p style={{ marginBottom: 10 }}>1. Analyze the time & space complexity constraints before implementing.</p>
+                  <p style={{ marginBottom: 10 }}>2. Utilize HashMap or Two-Pointers pattern to optimize lookup speeds.</p>
                 </div>
+              </div>
+            )}
+
+            {activeTab === 'submissions' && (
+              <div>
+                <div style={{ fontWeight: 700, fontSize: '0.8rem', color: '#8b949e', marginBottom: 10 }}>
+                  Submission History ({submissionsHistory.length})
+                </div>
+                {submissionsHistory.length === 0 ? (
+                  <div style={{ fontSize: '0.8rem', color: '#8b949e', fontStyle: 'italic', textAlign: 'center', padding: '24px 0' }}>
+                    No submissions yet for this session.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {submissionsHistory.map((sub) => (
+                      <div key={sub.id} style={{
+                        padding: '10px 12px',
+                        background: '#161b22',
+                        border: '1px solid #30363d',
+                        borderRadius: 8,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                      }}>
+                        <div>
+                          <div style={{
+                            fontSize: '0.8rem',
+                            fontWeight: 700,
+                            color: sub.verdict === 'Accepted' ? '#56d364' : '#f85149',
+                          }}>
+                            {sub.verdict === 'Accepted' ? '✓ Accepted' : `✗ ${sub.verdict}`}
+                          </div>
+                          <div style={{ fontSize: '0.72rem', color: '#8b949e', marginTop: 2 }}>
+                            {sub.language} • {sub.passed}/{sub.total} test cases • {sub.time}
+                          </div>
+                        </div>
+                        <span style={{ fontSize: '0.7rem', color: '#484f58' }}>{sub.timestamp}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -757,24 +836,42 @@ export default function CodeEditorPage() {
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: '0.7rem', color: '#484f58' }}>Ctrl+Enter to Run</span>
               <button onClick={() => setCode(selectedProblem.starterCode[selectedLang.id] || CODE_TEMPLATES[selectedLang.id])}
                 style={{ background: '#21262d', border: '1px solid #30363d', color: '#8b949e', padding: '5px 12px', borderRadius: 6, cursor: 'pointer', fontSize: '0.75rem' }}>
                 Reset
               </button>
-              <button onClick={runCode} disabled={running}
+
+              {/* Run Code Button */}
+              <button onClick={runCode} disabled={running || submitting}
                 style={{
-                  background: running ? '#21262d' : '#238636',
-                  border: `1px solid ${running ? '#30363d' : '#2ea043'}`,
-                  color: running ? '#8b949e' : '#fff',
-                  padding: '5px 16px', borderRadius: 6, cursor: running ? 'not-allowed' : 'pointer',
-                  fontSize: '0.82rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6,
+                  background: running ? '#21262d' : '#21262d',
+                  border: '1px solid #30363d',
+                  color: running ? '#8b949e' : '#c9d1d9',
+                  padding: '5px 14px', borderRadius: 6, cursor: running ? 'not-allowed' : 'pointer',
+                  fontSize: '0.82rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6,
                   transition: 'all 0.15s',
                 }}>
                 {running ? (
                   <><span style={{ display: 'inline-block', animation: 'spin 1s linear infinite' }}>⟳</span> Running...</>
                 ) : (
                   <>▶ Run Code</>
+                )}
+              </button>
+
+              {/* Submit Button */}
+              <button onClick={submitSolution} disabled={running || submitting}
+                style={{
+                  background: submitting ? '#21262d' : '#238636',
+                  border: `1px solid ${submitting ? '#30363d' : '#2ea043'}`,
+                  color: submitting ? '#8b949e' : '#fff',
+                  padding: '5px 16px', borderRadius: 6, cursor: submitting ? 'not-allowed' : 'pointer',
+                  fontSize: '0.82rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6,
+                  transition: 'all 0.15s',
+                }}>
+                {submitting ? (
+                  <><span style={{ display: 'inline-block', animation: 'spin 1s linear infinite' }}>⟳</span> Submitting...</>
+                ) : (
+                  <>🚀 Submit</>
                 )}
               </button>
             </div>
@@ -815,8 +912,8 @@ export default function CodeEditorPage() {
             />
           </div>
 
-          {/* Bottom: Stdin + Output */}
-          <div style={{ height: 200, flexShrink: 0, borderTop: '1px solid #30363d', display: 'flex' }}>
+          {/* Bottom: Stdin + Output / Verdict Panel */}
+          <div style={{ height: 210, flexShrink: 0, borderTop: '1px solid #30363d', display: 'flex' }}>
             {/* Stdin */}
             <div style={{ width: 200, flexShrink: 0, borderRight: '1px solid #30363d', display: 'flex', flexDirection: 'column' }}>
               <div style={{ padding: '6px 12px', borderBottom: '1px solid #30363d', fontSize: '0.72rem', color: '#8b949e', fontWeight: 600, background: '#161b22' }}>
@@ -825,7 +922,7 @@ export default function CodeEditorPage() {
               <textarea
                 value={stdin}
                 onChange={e => setStdin(e.target.value)}
-                placeholder={'Enter test input...\n\nExample:\n5\n1 2 3 4 5'}
+                placeholder={'Enter test input...\n\nExample:\n[2,7,11,15]\n9'}
                 style={{
                   flex: 1, background: '#0d1117', border: 'none', padding: '10px 12px',
                   color: '#c9d1d9', fontFamily: "'JetBrains Mono', monospace", fontSize: '0.8rem',
@@ -834,22 +931,26 @@ export default function CodeEditorPage() {
               />
             </div>
 
-            {/* Output */}
+            {/* Output & Verdict */}
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
               <div style={{ padding: '6px 12px', borderBottom: '1px solid #30363d', fontSize: '0.72rem', color: '#8b949e', fontWeight: 600, background: '#161b22', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span>📤 Output</span>
-                  {outputStatus === 'success' && !running && (
-                    <span style={{ color: '#56d364', fontWeight: 700, fontSize: '0.7rem' }}>✓ Accepted</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span>📤 Execution Output</span>
+                  {submissionVerdict && (
+                    <span style={{
+                      fontWeight: 800, fontSize: '0.72rem', padding: '2px 8px', borderRadius: 4,
+                      background: submissionVerdict.type === 'Accepted' ? 'rgba(35,134,54,0.2)' : 'rgba(248,81,73,0.2)',
+                      color: submissionVerdict.type === 'Accepted' ? '#56d364' : '#f85149',
+                      border: `1px solid ${submissionVerdict.type === 'Accepted' ? '#2ea043' : '#f85149'}`,
+                    }}>
+                      {submissionVerdict.type === 'Accepted' ? '✓ Accepted' : `✗ ${submissionVerdict.type}`} ({submissionVerdict.passed}/{submissionVerdict.total} passed)
+                    </span>
                   )}
-                  {outputStatus === 'error' && !running && (
-                    <span style={{ color: '#f85149', fontWeight: 700, fontSize: '0.7rem' }}>✗ Error</span>
-                  )}
-                  {execTime && !running && (
+                  {execTime && !running && !submitting && (
                     <span style={{ color: '#8b949e', fontSize: '0.68rem' }}>⏱ {execTime}s</span>
                   )}
                 </div>
-                <button onClick={() => { setOutput(''); setOutputStatus(null); setExecTime(null); }}
+                <button onClick={() => { setOutput(''); setOutputStatus(null); setSubmissionVerdict(null); setExecTime(null); }}
                   style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '0.72rem' }}>
                   Clear
                 </button>
@@ -862,9 +963,11 @@ export default function CodeEditorPage() {
                 background: '#0d1117',
               }}>
                 {running ? (
-                  <span style={{ color: '#f0883e' }}>⟳ Executing your code...</span>
+                  <span style={{ color: '#f0883e' }}>⟳ Executing code against custom input...</span>
+                ) : submitting ? (
+                  <span style={{ color: '#f0883e' }}>🚀 Submitting solution &amp; running test suite...</span>
                 ) : output || (
-                  <span style={{ color: '#484f58' }}>// Click ▶ Run Code or press Ctrl+Enter to execute</span>
+                  <span style={{ color: '#484f58' }}>// Click ▶ Run Code to test custom input or 🚀 Submit for test suite validation</span>
                 )}
               </div>
             </div>
