@@ -1703,3 +1703,36 @@ select option { background: var(--bg-card) !important; color: var(--text-primary
   background: #0d1117;
 }
 
+/* ─── Video Progress Bar ──────────────────────────────────────── */
+.video-progress-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.video-progress-track {
+  flex: 1;
+  height: 6px;
+  background: var(--border-subtle, rgba(0,0,0,0.08));
+  border-radius: var(--radius-full, 9999px);
+  overflow: hidden;
+}
+
+.video-progress-fill {
+  height: 100%;
+  border-radius: var(--radius-full, 9999px);
+  transition: width 0.4s ease, background 0.3s ease;
+  min-width: 2px;
+}
+
+.video-progress-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+  min-width: 82px;
+  text-align: right;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  transition: color 0.3s ease;
+}
+

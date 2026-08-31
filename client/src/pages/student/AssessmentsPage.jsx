@@ -349,7 +349,7 @@ export default function AssessmentsPage() {
                   }
                 }}
               >
-                {a.type === 'coding' ? 'Open Editor' : 'Start Test'} <ChevronRight size={13} />
+                {a.type === 'coding' ? 'Open Editor' : 'Start Assessment'} <ChevronRight size={13} />
               </button>
             </div>
           );
