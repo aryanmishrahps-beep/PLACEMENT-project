@@ -133,14 +133,91 @@ export default function CoursesPage() {
         </div>
         <div className="grid grid-3">
           {COMPANY_TRACKS.map((c) => (
-            <div key={c.id} className="card" style={{ cursor: 'pointer', textAlign: 'center', transition: 'all 0.25s' }}
+            <div key={c.id} className="card" style={{
+              cursor: 'pointer',
+              padding: 0,
+              overflow: 'hidden',
+              transition: 'transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+            }}
               onClick={() => navigate('/student/assessments')}
-              onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--border-accent)'}
-              onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border-subtle)'}>
-              <div style={{ fontSize: '2.5rem', marginBottom: '8px' }}>{c.logo}</div>
-              <div className="font-bold text-lg">{c.name}</div>
-              <div className="text-xs text-muted" style={{ marginTop: '4px' }}>Practice Track</div>
-              <button className="btn btn-primary btn-sm" style={{ marginTop: '12px' }}>Start Track →</button>
+              onMouseEnter={e => {
+                e.currentTarget.style.transform = 'translateY(-4px)';
+                e.currentTarget.style.boxShadow = '0 12px 24px rgba(0,0,0,0.12)';
+                e.currentTarget.style.borderColor = 'var(--color-primary)';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = 'var(--shadow-card)';
+                e.currentTarget.style.borderColor = 'var(--border-subtle)';
+              }}>
+              <div>
+                {/* Header Banner */}
+                <div style={{
+                  height: 100,
+                  position: 'relative',
+                  background: '#0f172a',
+                  overflow: 'hidden',
+                }}>
+                  <img
+                    src={c.cover}
+                    alt={c.name}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.65 }}
+                  />
+                  <div style={{
+                    position: 'absolute',
+                    inset: 0,
+                    background: `linear-gradient(180deg, rgba(15,23,42,0.1) 0%, rgba(15,23,42,0.8) 100%)`,
+                  }} />
+
+                  {/* Brand Logo Container */}
+                  <div style={{
+                    position: 'absolute',
+                    bottom: -20,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    width: 54,
+                    height: 54,
+                    borderRadius: 14,
+                    background: '#ffffff',
+                    padding: '8px',
+                    boxShadow: '0 6px 16px rgba(0,0,0,0.2)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    border: '2px solid var(--bg-card)',
+                  }}>
+                    <img
+                      src={c.logo}
+                      alt={`${c.name} logo`}
+                      style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+                      onError={(e) => {
+                        // Fallback if logo fails
+                        e.target.style.display = 'none';
+                        e.target.parentNode.innerText = c.name.slice(0, 2);
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Content */}
+                <div style={{ padding: '28px 16px 16px', textAlign: 'center' }}>
+                  <div className="font-bold text-lg" style={{ color: 'var(--text-primary)', marginBottom: 2 }}>
+                    {c.name}
+                  </div>
+                  <div className="text-xs text-muted" style={{ fontWeight: 500 }}>
+                    Placement Track · {c.modules || 15} Practice Tests
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ padding: '0 16px 16px' }}>
+                <button className="btn btn-primary btn-sm w-full" style={{ justifyContent: 'center' }}>
+                  Start Track →
+                </button>
+              </div>
             </div>
           ))}
         </div>

@@ -15,12 +15,12 @@ export const MODULES = [
 ];
 
 export const COMPANY_TRACKS = [
-  { id: 'tcs', name: 'TCS', logo: '🔷', color: '#003366' },
-  { id: 'infosys', name: 'Infosys', logo: '🔵', color: '#007CC2' },
-  { id: 'wipro', name: 'Wipro', logo: '🟣', color: '#6B2D8B' },
-  { id: 'amazon', name: 'Amazon', logo: '📦', color: '#FF9900' },
-  { id: 'google', name: 'Google', logo: '🌈', color: '#4285F4' },
-  { id: 'microsoft', name: 'Microsoft', logo: '🪟', color: '#00A4EF' },
+  { id: 'tcs', name: 'TCS', logo: 'https://upload.wikimedia.org/wikipedia/commons/b/b1/Tata_Consultancy_Services_Logo.svg', cover: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=600&q=80', color: '#003366', modules: 14 },
+  { id: 'infosys', name: 'Infosys', logo: 'https://upload.wikimedia.org/wikipedia/commons/9/95/Infosys_logo.svg', cover: 'https://images.unsplash.com/photo-1554469384-e58fac16e23a?auto=format&fit=crop&w=600&q=80', color: '#007CC2', modules: 18 },
+  { id: 'wipro', name: 'Wipro', logo: 'https://upload.wikimedia.org/wikipedia/commons/a/a0/Wipro_Primary_Logo_Color_RGB.svg', cover: 'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=600&q=80', color: '#6B2D8B', modules: 12 },
+  { id: 'amazon', name: 'Amazon', logo: 'https://upload.wikimedia.org/wikipedia/commons/a/a9/Amazon_logo.svg', cover: 'https://images.unsplash.com/photo-1523474253046-8cd2748b5fd2?auto=format&fit=crop&w=600&q=80', color: '#FF9900', modules: 25 },
+  { id: 'google', name: 'Google', logo: 'https://upload.wikimedia.org/wikipedia/commons/2/2f/Google_2015_logo.svg', cover: 'https://images.unsplash.com/photo-1572021335469-31706a17aaef?auto=format&fit=crop&w=600&q=80', color: '#4285F4', modules: 30 },
+  { id: 'microsoft', name: 'Microsoft', logo: 'https://upload.wikimedia.org/wikipedia/commons/9/96/Microsoft_logo_%282012%29.svg', cover: 'https://images.unsplash.com/photo-1519389950473-47ba0277781c?auto=format&fit=crop&w=600&q=80', color: '#00A4EF', modules: 22 },
 ];
 
 export const SAMPLE_BADGES = [
