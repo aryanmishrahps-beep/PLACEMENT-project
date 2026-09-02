@@ -1,9 +1,10 @@
 import ProtectedLayout from '../../components/layout/ProtectedLayout';
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, ReferenceLine, PieChart, Pie, Cell
 } from 'recharts';
-import { Activity, Shield, AlertTriangle, CheckCircle2, Sliders, Users, Eye, BarChart3 } from 'lucide-react';
+import { Activity, Shield, AlertTriangle, CheckCircle2, Sliders, Users, Eye, BarChart3, ExternalLink } from 'lucide-react';
 
 const WEEKLY = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const WEEKLY_SIGNUPS = [12, 8, 24, 19, 31, 7, 3];
@@ -190,7 +191,12 @@ export default function AdminAnalytics() {
                 <h2 className="card-title">Proctoring Telemetry Events</h2>
                 <p className="card-subtitle">Logged metadata events stored in Firestore</p>
               </div>
-              <span className="badge badge-primary">3 Events Logged</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Link to="/admin/proctoring-report" className="btn btn-secondary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: 5, textDecoration: 'none' }}>
+                  <ExternalLink size={12} /> Candidate Report
+                </Link>
+                <span className="badge badge-primary">3 Events Logged</span>
+              </div>
             </div>
             <table className="data-table">
               <thead>

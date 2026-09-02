@@ -1,5 +1,5 @@
 import { db } from '../firebase/config';
-import { doc, getDoc, setDoc, updateDoc, onSnapshot, collection, addDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, onSnapshot, collection, addDoc, getDocs, query, orderBy } from 'firebase/firestore';
 import API from './api';
 
 export const assessmentService = {
@@ -180,24 +180,74 @@ export const assessmentService = {
     }
   },
 
-  // Log Finalized Discrete Proctoring Event to Firestore (Technical Spec Section 11)
+  // Log Finalized Discrete Proctoring Event to Firestore
   async logProctoringEvent({ sessionId, event }) {
     if (!sessionId || !event) return;
+    const now = event.timestamp || new Date().toISOString();
+    const eventPayload = {
+      sessionId,
+      eventType: event.eventType || 'HEAD_MOVEMENT',
+      eventDescription: event.reason || event.eventDescription || `Head movement event: ${event.eventType}`,
+      eventTimestamp: now,
+      timestamp: now,
+      severity: event.severity || 'MEDIUM',
+      estimatedDeviation: event.estimatedDeviationCm !== undefined && event.estimatedDeviationCm !== null 
+        ? `${event.estimatedDeviationCm} cm` 
+        : event.estimatedDeviationNorm !== undefined 
+          ? `${event.estimatedDeviationNorm} norm` 
+          : event.peakDeviation || 'N/A',
+      estimatedDeviationCm: event.estimatedDeviationCm ?? null,
+      confidence: event.confidence || 0.90,
+      direction: event.direction || 'NONE',
+      headPose: event.headPose || null,
+      faceCount: event.faceCount ?? 1,
+      duration: event.duration || 0,
+    };
+
+    // 1. In-memory / localStorage cache for fallback admin report viewing
+    try {
+      const localKey = `proctor_events_${sessionId}`;
+      const existing = JSON.parse(localStorage.getItem(localKey) || '[]');
+      existing.push({ id: `evt_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`, ...eventPayload });
+      localStorage.setItem(localKey, JSON.stringify(existing.slice(-100)));
+    } catch (_) {}
+
+    // 2. Firestore persistence
     try {
       if (db) {
         const eventsCol = collection(db, 'assessmentSessions', sessionId, 'proctoringEvents');
-        await addDoc(eventsCol, {
-          eventType: event.eventType || 'FACE_MOVEMENT',
-          direction: event.direction || 'NONE',
-          timestamp: event.timestamp || new Date().toISOString(),
-          peakDeviation: event.peakDeviation || 0,
-          duration: event.duration || 0,
-          confidence: event.confidence || 0.95
-        });
+        await addDoc(eventsCol, eventPayload);
       }
     } catch (err) {
-      console.warn('Firestore proctoring event log error:', err?.message);
+      console.warn('Firestore proctoring event log notice:', err?.message);
     }
+  },
+
+  // Fetch Proctoring Events for Admin Report
+  async getProctoringEvents(sessionId) {
+    if (!sessionId) return [];
+    let events = [];
+
+    if (db) {
+      try {
+        const eventsCol = collection(db, 'assessmentSessions', sessionId, 'proctoringEvents');
+        const q = query(eventsCol, orderBy('timestamp', 'asc'));
+        const snap = await getDocs(q);
+        events = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      } catch (err) {
+        console.warn('Firestore getProctoringEvents error, using local fallback:', err?.message);
+      }
+    }
+
+    if (events.length === 0) {
+      try {
+        const localKey = `proctor_events_${sessionId}`;
+        events = JSON.parse(localStorage.getItem(localKey) || '[]');
+      } catch (_) {}
+    }
+
+    return events;
   }
 };
+
 

@@ -24,6 +24,7 @@ import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminUserManagement from './pages/admin/AdminUserManagement';
 import AdminContentManagement from './pages/admin/AdminContentManagement';
 import AdminAnalytics from './pages/admin/AdminAnalytics';
+import AdminProctoringReport from './pages/admin/AdminProctoringReport';
 import AdminSettings from './pages/admin/AdminSettings';
 
 import ProtectedLayout from './components/layout/ProtectedLayout';
@@ -70,6 +71,8 @@ function App() {
           <Route path="/admin/users" element={<AdminUserManagement />} />
           <Route path="/admin/content" element={<AdminContentManagement />} />
           <Route path="/admin/analytics" element={<AdminAnalytics />} />
+          <Route path="/admin/proctoring-report" element={<AdminProctoringReport />} />
+          <Route path="/admin/proctoring-report/:sessionId" element={<AdminProctoringReport />} />
           <Route path="/admin/settings" element={<AdminSettings />} />
 
           {/* Fallback */}

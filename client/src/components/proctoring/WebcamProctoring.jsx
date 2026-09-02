@@ -2,12 +2,13 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Camera, Minimize2, Maximize2, AlertTriangle, Shield, Activity, RefreshCw, Terminal } from 'lucide-react';
 import { HeadPositionTracker, DEFAULT_CONFIG } from '../../utils/faceTracker';
+import { detectFrame, destroyEstimator } from '../../utils/headPoseEstimator';
 import FaceMovementGraph from './FaceMovementGraph';
 import { assessmentService } from '../../services/assessmentService';
 
 /**
- * AI Webcam Proctoring Component — Head-Position-Only Detector
- * Technical Specification & State Machine Compliant
+ * AI Webcam Proctoring Component — Advanced Head Position Monitoring
+ * Real-time 5-Zone Lateral Tracking & Orientation (Yaw/Pitch/Roll)
  */
 export default function WebcamProctoring({
   isActive,
@@ -37,7 +38,12 @@ export default function WebcamProctoring({
     rawX: 0.5,
     smoothedX: 0.5,
     centerX: 0.5,
-    boundaries: { leftTrigger: 0.44, rightTrigger: 0.56, threshold: 0.06 },
+    boundaries: { leftTrigger: 0.40, rightTrigger: 0.60, threshold: 0.10 },
+    headPose: { yaw: 0, pitch: 0, roll: 0 },
+    orientationState: 'HEAD_NORMAL',
+    estimatedDeviationCm: null,
+    estimatedDeviationNorm: 0,
+    usingMediaPipe: false,
     sideDuration: 0,
     eventCount: 0,
     lastEvent: 'NONE',
@@ -88,6 +94,7 @@ export default function WebcamProctoring({
         streamRef.current = null;
       }
       setStreamActive(false);
+      destroyEstimator();
     };
   }, [isActive, attachStream, onViolationDetected]);
 
@@ -104,11 +111,11 @@ export default function WebcamProctoring({
     trackerRef.current.reset();
   };
 
-  // 2. Real-time Frame Analysis Loop (~100ms interval for 10fps tracking)
+  // 2. Real-time Frame Analysis Loop (~100ms interval for 10-15fps tracking)
   useEffect(() => {
     if (!isActive || !streamActive) return;
 
-    const intervalId = setInterval(() => {
+    const intervalId = setInterval(async () => {
       if (isAnalyzing.current || !videoRef.current || !canvasRef.current) return;
       isAnalyzing.current = true;
 
@@ -122,8 +129,14 @@ export default function WebcamProctoring({
           canvas.height = 120;
           ctx.drawImage(video, 0, 0, 160, 120);
 
+          // Run MediaPipe Face Landmarker detection (async, non-blocking fallback)
+          let headPoseData = null;
+          try {
+            headPoseData = await detectFrame(video, performance.now());
+          } catch (_) {}
+
           // Process frame with HeadPositionTracker engine
-          const result = trackerRef.current.processFrame(ctx, 160, 120);
+          const result = trackerRef.current.processFrame(ctx, 160, 120, headPoseData);
 
           setTelemetry({
             faceCount: result.faceCount,
@@ -135,6 +148,11 @@ export default function WebcamProctoring({
             smoothedX: result.smoothedX,
             centerX: result.centerX,
             boundaries: result.boundaries,
+            headPose: result.headPose,
+            orientationState: result.orientationState,
+            estimatedDeviationCm: result.estimatedDeviationCm,
+            estimatedDeviationNorm: result.estimatedDeviationNorm,
+            usingMediaPipe: result.usingMediaPipe,
             sideDuration: result.sideDuration,
             eventCount: result.eventCount,
             lastEvent: result.lastEvent,
@@ -156,7 +174,7 @@ export default function WebcamProctoring({
           if (result.newFinalizedEvent && onViolationDetected) {
             onViolationDetected({
               type: result.newFinalizedEvent.eventType,
-              severity: 'HIGH',
+              severity: result.newFinalizedEvent.severity || 'HIGH',
               message: result.newFinalizedEvent.reason || `Proctoring violation: ${result.newFinalizedEvent.eventType.replace(/_/g, ' ')}`
             });
           }
@@ -178,6 +196,32 @@ export default function WebcamProctoring({
   // Calculate dynamic reticle X position relative to bounds
   const relX = ((telemetry.smoothedX - 0.2) / 0.6) * 100;
   const clampedX = Math.max(10, Math.min(90, relX));
+
+  // Head Position Status helper
+  const getHeadPositionStatus = () => {
+    switch (telemetry.state) {
+      case 'CENTER':
+        return { label: '✓ Center', color: '#4ade80' };
+      case 'SLIGHT_LEFT':
+        return { label: '⚠ Slight Left', color: '#f59e0b' };
+      case 'SLIGHT_RIGHT':
+        return { label: '⚠ Slight Right', color: '#f59e0b' };
+      case 'SIGNIFICANT_LEFT':
+        return { label: '⚠ Significant Left', color: '#ef4444' };
+      case 'SIGNIFICANT_RIGHT':
+        return { label: '⚠ Significant Right', color: '#ef4444' };
+      case 'CALIBRATING':
+        return { label: 'Calibrating...', color: '#f59e0b' };
+      default:
+        return { label: '✓ Center', color: '#4ade80' };
+    }
+  };
+
+  const headPosStatus = getHeadPositionStatus();
+
+  // Normalized displacement for movement visualization dot
+  const displacement = (telemetry.smoothedX || 0.5) - (telemetry.centerX || 0.5);
+  const indicatorDotPct = Math.max(10, Math.min(90, 50 + (displacement / 0.2) * 40));
 
   return createPortal(
     <>
@@ -307,12 +351,17 @@ export default function WebcamProctoring({
                     }}>
                       <RefreshCw size={16} color="#f59e0b" style={{ animation: 'spin 1.2s linear infinite' }} />
                       <span style={{ fontSize: '0.68rem', color: '#f8fafc', fontWeight: 700 }}>
-                        {streamActive ? 'Sit normally, look at screen' : 'Starting camera…'}
+                        {streamActive ? 'Calibrating Camera...' : 'Starting camera…'}
                       </span>
                       {streamActive && (
-                        <div style={{ width: '80%', height: 3, background: 'rgba(255,255,255,0.1)', borderRadius: 99, overflow: 'hidden' }}>
-                          <div style={{ height: '100%', background: '#f59e0b', width: `${telemetry.calibrationProgress}%`, transition: 'width 0.1s' }} />
-                        </div>
+                        <>
+                          <span style={{ fontSize: '0.60rem', color: '#94a3b8' }}>
+                            Sit normally and look at screen
+                          </span>
+                          <div style={{ width: '80%', height: 3, background: 'rgba(255,255,255,0.1)', borderRadius: 99, overflow: 'hidden', marginTop: 2 }}>
+                            <div style={{ height: '100%', background: '#f59e0b', width: `${telemetry.calibrationProgress}%`, transition: 'width 0.1s' }} />
+                          </div>
+                        </>
                       )}
                     </div>
                   )}
@@ -321,18 +370,48 @@ export default function WebcamProctoring({
               <canvas ref={canvasRef} style={{ display: 'none' }} />
             </div>
 
-            {/* Live Status Bar */}
+            {/* Movement Visualization Bar & Head Position Status */}
             {streamActive && !isCalibrating && (
-              <div style={{ marginTop: 8 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: '0.68rem', color: '#94a3b8', fontWeight: 600 }}>Status</span>
+              <div style={{ marginTop: 8, padding: '6px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)' }}>
+                {/* Horizontal Movement Indicator */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.58rem', color: '#64748b', fontWeight: 700, letterSpacing: '0.04em' }}>
+                  <span>LEFT</span>
+                  <span style={{ color: '#94a3b8' }}>CENTER</span>
+                  <span>RIGHT</span>
+                </div>
+                <div style={{ position: 'relative', height: 4, background: 'rgba(255,255,255,0.1)', borderRadius: 2, margin: '5px 0' }}>
+                  <div style={{
+                    position: 'absolute',
+                    left: '50%',
+                    top: -2,
+                    bottom: -2,
+                    width: 2,
+                    background: '#64748b',
+                    transform: 'translateX(-50%)',
+                  }} />
+                  <div style={{
+                    position: 'absolute',
+                    left: `${indicatorDotPct}%`,
+                    top: '50%',
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    background: isWarning ? '#ef4444' : '#38bdf8',
+                    transform: 'translate(-50%, -50%)',
+                    boxShadow: isWarning ? '0 0 6px #ef4444' : '0 0 6px #38bdf8',
+                    transition: 'left 0.1s ease-out',
+                  }} />
+                </div>
+
+                {/* Head Position Status Label */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+                  <span style={{ fontSize: '0.62rem', color: '#94a3b8', fontWeight: 600 }}>HEAD POSITION</span>
                   <span style={{
-                    fontSize: '0.68rem', fontWeight: 800,
-                    color: isWarning ? '#ef4444' : '#4ade80',
+                    fontSize: '0.65rem',
+                    fontWeight: 800,
+                    color: headPosStatus.color,
                   }}>
-                    {isWarning
-                      ? `⚠ Face moved ${telemetry.warningDirection}`
-                      : '● Face centered'}
+                    {headPosStatus.label}
                   </span>
                 </div>
               </div>
@@ -343,7 +422,7 @@ export default function WebcamProctoring({
         {/* ── DEVELOPER DEBUG OVERLAY PANEL ──────────────────────── */}
         {showDebug && !minimized && (
           <div style={{
-            marginTop: 10,
+            marginTop: 8,
             padding: '8px 10px',
             background: '#030712',
             borderRadius: 8,
@@ -355,7 +434,9 @@ export default function WebcamProctoring({
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', color: '#38bdf8', fontWeight: 700, marginBottom: 4, borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: 2 }}>
               <span>PROCTORING DEBUG</span>
-              <span>LIVE METRICS</span>
+              <span style={{ color: telemetry.usingMediaPipe ? '#4ade80' : '#f59e0b' }}>
+                {telemetry.usingMediaPipe ? 'MEDIAPIPE' : 'FALLBACK'}
+              </span>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -364,33 +445,37 @@ export default function WebcamProctoring({
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: '#9ca3af' }}>Current Zone:</span>
+              <span style={{ color: '#9ca3af' }}>Head Zone:</span>
               <span style={{ color: telemetry.state !== 'CENTER' ? '#ef4444' : '#60a5fa', fontWeight: 700 }}>{telemetry.state}</span>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: '#9ca3af' }}>Previous Zone:</span>
-              <span>{telemetry.previousState}</span>
+              <span style={{ color: '#9ca3af' }}>Orientation:</span>
+              <span style={{ color: telemetry.orientationState !== 'HEAD_NORMAL' ? '#f59e0b' : '#4ade80' }}>
+                {telemetry.orientationState?.replace('HEAD_', '') || 'NORMAL'}
+              </span>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: '#9ca3af' }}>Nose X:</span>
-              <span>{telemetry.smoothedX}</span>
+              <span style={{ color: '#9ca3af' }}>Yaw / Pitch / Roll:</span>
+              <span>{telemetry.headPose?.yaw}° / {telemetry.headPose?.pitch}° / {telemetry.headPose?.roll}°</span>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: '#9ca3af' }}>Center X:</span>
-              <span>{telemetry.centerX}</span>
+              <span style={{ color: '#9ca3af' }}>Est. Deviation:</span>
+              <span>
+                {telemetry.estimatedDeviationCm !== null ? `~${telemetry.estimatedDeviationCm} cm` : `${telemetry.estimatedDeviationNorm || 0} norm`}
+              </span>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: '#9ca3af' }}>Movement Threshold:</span>
-              <span>{telemetry.boundaries?.threshold || 0.06}</span>
+              <span style={{ color: '#9ca3af' }}>Smoothed X / Center:</span>
+              <span>{telemetry.smoothedX} / {telemetry.centerX}</span>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: '#9ca3af' }}>Side Duration:</span>
-              <span style={{ color: telemetry.sideDuration >= 5 ? '#ef4444' : '#f59e0b' }}>{telemetry.sideDuration}s</span>
+              <span style={{ color: '#9ca3af' }}>Hold Duration:</span>
+              <span style={{ color: telemetry.sideDuration >= 1.5 ? '#ef4444' : '#f59e0b' }}>{telemetry.sideDuration}s</span>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
