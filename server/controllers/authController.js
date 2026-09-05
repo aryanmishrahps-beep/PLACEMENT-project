@@ -129,3 +129,12 @@ exports.getMe = async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 };
+
+exports.getAllUsers = async (req, res) => {
+  try {
+    const users = await User.find({}, '-password');
+    res.json({ success: true, count: users.length, users });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
