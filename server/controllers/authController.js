@@ -1,11 +1,11 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { User, StudentProfile, Analytics } = require('../models');
+const User = require('../models/User');
 
 // Helper to generate JWT
 const generateToken = (user) => {
   return jwt.sign(
-    { id: user.id, role: user.role, email: user.email },
+    { id: user.id || user._id, role: user.role, email: user.email },
     process.env.JWT_SECRET || 'your_jwt_secret_key',
     { expiresIn: '1d' }
   );
@@ -15,13 +15,13 @@ exports.register = async (req, res) => {
   try {
     const { name, email, password, role, department, batch } = req.body;
     
-    const existingUser = await User.findOne({ where: { email } });
+    const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(400).json({ success: false, message: 'User already exists' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await User.create({
+    const user = new User({
       name,
       email,
       password: hashedPassword,
@@ -31,11 +31,7 @@ exports.register = async (req, res) => {
       streak: 1,
       lastActive: new Date().toISOString().split('T')[0]
     });
-
-    if (user.role === 'student') {
-      await StudentProfile.create({ userId: user.id, branch: department });
-      await Analytics.create({ userId: user.id });
-    }
+    await user.save();
 
     const token = generateToken(user);
 
@@ -44,7 +40,7 @@ exports.register = async (req, res) => {
       message: 'User created successfully',
       token,
       user: {
-        id: user.id,
+        id: user.id || user._id,
         name: user.name,
         email: user.email,
         role: user.role,
@@ -63,7 +59,7 @@ exports.register = async (req, res) => {
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
-    const user = await User.findOne({ where: { email } });
+    const user = await User.findOne({ email });
 
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
@@ -94,7 +90,7 @@ exports.login = async (req, res) => {
       message: 'Login successful!',
       token,
       user: {
-        id: user.id,
+        id: user.id || user._id,
         name: user.name,
         email: user.email,
         role: user.role,
@@ -112,13 +108,13 @@ exports.login = async (req, res) => {
 
 exports.getMe = async (req, res) => {
   try {
-    const user = await User.findByPk(req.user.id);
+    const user = await User.findById(req.user.id);
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
     res.json({
       success: true,
       user: {
-        id: user.id,
+        id: user.id || user._id,
         name: user.name,
         email: user.email,
         role: user.role,
