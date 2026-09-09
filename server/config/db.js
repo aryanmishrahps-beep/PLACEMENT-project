@@ -10,7 +10,7 @@ const mongoose = require('mongoose');
 const connectDB = async () => {
   try {
     let uri = process.env.MONGO_URI;
-    
+
     // If uri is empty or placeholder, fallback to MongoMemoryServer for seamless local testing
     if (!uri || uri.includes('your_mongodb_atlas_uri')) {
       try {
